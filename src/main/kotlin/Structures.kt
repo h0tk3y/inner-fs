@@ -1,6 +1,5 @@
 import java.nio.ByteBuffer
 
-const val MAX_NAME_SIZE = 256
 const val BLOCK_SIZE = 4096
 
 internal interface ByteStructure {
@@ -20,7 +19,7 @@ internal fun measureSize(byteStructure: ByteStructure): Int {
     return buffer.position()
 }
 
-data class BlockHeader(val nextBlockLocation: Long) : ByteStructure {
+internal data class BlockHeader(val nextBlockLocation: Long) : ByteStructure {
     override fun writeTo(buffer: ByteBuffer) {
         buffer.putLong(nextBlockLocation)
     }
@@ -37,15 +36,19 @@ data class BlockHeader(val nextBlockLocation: Long) : ByteStructure {
     }
 }
 
-data class DirectoryEntry(
+internal data class DirectoryEntry(
         val isDirectory: Boolean,
         val firstBlockLocation: Long,
+        val size: Long,
         val name: String
 ) : ByteStructure {
     val nameBytes get() = name.toByteArray(Charsets.UTF_8)
 
+    val exists get() = firstBlockLocation > BlockHeader.NO_NEXT_BLOCK
+    internal val isFreeBlocksEntry get() = firstBlockLocation < 0
+
     init {
-        require(nameBytes.size <= MAX_NAME_SIZE) {
+        require(nameBytes.size <= MAX_NAME_SIZE) { //todo use NameChecker
             "An entry name should fit into $MAX_NAME_SIZE bytes in UTF-8."
         }
     }
@@ -54,7 +57,7 @@ data class DirectoryEntry(
         with(buffer) {
             put(isDirectory.asByte())
             putLong(firstBlockLocation)
-
+            putLong(size)
             val nameBytes = nameBytes
             putInt(nameBytes.size)
             put(nameBytes)
@@ -66,12 +69,17 @@ data class DirectoryEntry(
         fun read(from: ByteBuffer): DirectoryEntry = with(from) {
             val isDirectory = get().asBoolean()
             val firstBlockLocation = getLong()
+            val size = getLong()
             val nameBytesSize = getInt()
-            val name = ByteArray(nameBytesSize).let { get(it); String(it, Charsets.UTF_8) }
+            val name = ByteArray(MAX_NAME_SIZE).let { get(it); String(it, 0, nameBytesSize, Charsets.UTF_8) }
 
-            return DirectoryEntry(isDirectory, firstBlockLocation, name)
+            return DirectoryEntry(isDirectory, firstBlockLocation, size, name)
         }
 
-        val size by lazy { measureSize(DirectoryEntry(false, 0L, "")) }
+        val size by lazy { measureSize(DirectoryEntry(false, 0L, 0L, "")) }
     }
 }
+
+internal val entriesInBlock = (BLOCK_SIZE - BlockHeader.size) / DirectoryEntry.size
+
+internal val dataBytesInBlock = BLOCK_SIZE - BlockHeader.size

@@ -1,27 +1,25 @@
-
-import org.junit.After
-import org.junit.Assert.*
-import org.junit.Before
-import org.junit.Test
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.ExtendWith
 import java.nio.file.Files
 import java.nio.file.Paths
 
-/**
- * Created by igushs on 12/25/16.
- */
 
+@ExtendWith(IfsExternalResource::class)
 class IfsOperationsTest {
-    private val provider = InnerFileSystemProvider.instance
 
+    @InjectIfs
     lateinit var ifs: InnerFileSystem
 
-    @Before fun initIfs() {
+    @BeforeEach fun initIfs() {
         val file = Files.createTempFile(Paths.get("."), "innerFs", ".ifs")
         Files.delete(file)
-        ifs = InnerFileSystemProvider.instance.newFileSystem(file, emptyMap<String, Unit>()) as InnerFileSystem
+        ifs = InnerFileSystemProvider.instance.newFileSystem(file, emptyMap<String, Unit>())
     }
 
-    @After fun closeFs() {
+    @AfterEach fun closeFs() {
         ifs.close()
         Files.delete(ifs.underlyingPath)
     }
@@ -53,6 +51,18 @@ class IfsOperationsTest {
     }
 
     @Test fun freeBlocksChain() {
+        val blocks = (1..10).map { ifs.allocateBlock {} }
+        val deallocated = blocks.filterIndexed { index, _ -> index % 2 == 0 }
+        deallocated.forEach { ifs.deallocateBlock(it) }
 
+        val reallocated = (1..deallocated.size).map { ifs.allocateBlock {} }
+        assertEquals(deallocated.toSet(), reallocated.toSet())
+    }
+
+    @Test fun defaultDirectoryEntriesRead() {
+        val entries = ifs.entriesFromBlocksAt(0L).toList()
+        assertTrue(entries.drop(1).all { !it.entry.exists })
+        assertTrue(entries.drop(1).all { it.entry.name == EMPTY_ENTRY_NAME })
+        assertTrue(entries.drop(1).all { (it.location - BlockHeader.size) % DirectoryEntry.size == 0L })
     }
 }

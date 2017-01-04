@@ -1,14 +1,16 @@
-class BlockLocator(initialBlockLocation: Long,
-                   val blockSize: Int = BLOCK_SIZE,
+internal class BlockLocator(initialBlockLocation: Long,
+                   val blockDataSize: Int = dataBytesInBlock,
+                   val blockHeaderSize: Int = BlockHeader.size,
                    val blockReader: (offset: Long) -> BlockHeader) {
 
     //Stores starts of blocks
     private val locationList = mutableListOf(initialBlockLocation)
 
-    private fun blockIndexByTarget(target: Long) = target / blockSize
+    private fun blockIndexByTarget(target: Long) = target / blockDataSize
 
-    private fun offsetInBlock(target: Long) = target % blockSize
+    private fun offsetInBlockData(target: Long) = (target % blockDataSize).toInt()
 
+    @Synchronized
     fun locate(target: Long): Long? {
         if (target < 0)
             return null
@@ -29,6 +31,16 @@ class BlockLocator(initialBlockLocation: Long,
         if (blockLocation == BlockHeader.NO_NEXT_BLOCK)
             return null
 
-        return blockLocation + offsetInBlock(target)
+        return blockLocation + blockHeaderSize + offsetInBlockData(target)
     }
+
+    fun appendBlock(blockLocation: Long) {
+        check(locationList.last() == BlockHeader.NO_NEXT_BLOCK) { "Appending a block is only allowed if the last block is known" }
+        locationList.removeAt(locationList.lastIndex)
+        locationList.add(blockLocation)
+    }
+
+    fun remainingBytesInBlock(target: Long): Int = dataBytesInBlock - (target % dataBytesInBlock).toInt()
+
+    val lastBlockLocation get() = locationList.last { it != BlockHeader.NO_NEXT_BLOCK }
 }

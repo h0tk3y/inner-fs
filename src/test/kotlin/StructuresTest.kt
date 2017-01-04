@@ -1,5 +1,6 @@
-import org.junit.Assert
-import org.junit.Test
+
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Test
 
 /**
  * Created by igushs on 12/23/16.
@@ -10,21 +11,19 @@ class ByteStructuresTest {
         val blockHeader = BlockHeader(12345L)
         val bytes = blockHeader.bytes()
 
-        Assert.assertEquals(BlockHeader.size, bytes.position())
-        bytes.flip()
+        assertEquals(BlockHeader.size, bytes.limit())
 
         val deserialized = BlockHeader.read(bytes)
-        Assert.assertEquals(blockHeader, deserialized)
+        assertEquals(blockHeader, deserialized)
     }
 
     @Test fun directoryEntry() {
-        val entry = DirectoryEntry(true, 12345L, "someMeaninglessName")
+        val entry = DirectoryEntry(true, 12345L, 54321L, "someMeaninglessName")
         val bytes = entry.bytes()
 
-        Assert.assertEquals(DirectoryEntry.size, bytes.position())
-        bytes.flip()
+        assertEquals(DirectoryEntry.size, bytes.limit())
 
         val deserialized = DirectoryEntry.read(bytes)
-        Assert.assertEquals(entry, deserialized)
+        assertEquals(entry, deserialized)
     }
 }

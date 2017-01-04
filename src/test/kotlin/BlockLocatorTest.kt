@@ -1,5 +1,7 @@
-import org.junit.Assert
-import org.junit.Test
+
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Test
 
 /**
  * Created by igushs on 12/23/16.
@@ -8,9 +10,9 @@ import org.junit.Test
 class BlockLocatorTest {
     @Test fun empty() {
         val map = BlockLocator(BlockHeader.NO_NEXT_BLOCK) { throw NotImplementedError() }
-        val l = map.locate(map.blockSize.toLong() / 2)
+        val l = map.locate(map.blockDataSize.toLong() / 2)
 
-        Assert.assertNull(l)
+        assertNull(l)
     }
 
     @Test fun negativeLocation() {
@@ -24,7 +26,7 @@ class BlockLocatorTest {
 
         val location = locator.locate(-1L)
 
-        Assert.assertNull(location)
+        assertNull(location)
     }
 
     @Test fun testBlocksResolving() {
@@ -43,13 +45,13 @@ class BlockLocatorTest {
         }
 
         val locationOfBlock0 = locator.locate(0L)
-        Assert.assertEquals(startOfBlock0, locationOfBlock0)
+        assertEquals(startOfBlock0 + locator.blockHeaderSize, locationOfBlock0)
 
         val locationOfBlock1 = locator.locate(blockSize.toLong())
-        Assert.assertEquals(startOfBlock1, locationOfBlock1)
+        assertEquals(startOfBlock1 + locator.blockHeaderSize, locationOfBlock1)
 
         val locationInBlock3 = locator.locate(3L * blockSize + 7)
-        Assert.assertEquals(startOfBlock3 + 7, locationInBlock3)
+        assertEquals(startOfBlock3 + locator.blockHeaderSize + 7, locationInBlock3)
     }
 
     @Test fun beyondLastBlock() {
@@ -66,7 +68,7 @@ class BlockLocatorTest {
 
         val target1 = blockSize * 2 + blockSize + 1L
         val target2 = blockSize * 5 + blockSize + 1L
-        Assert.assertNull(locator.locate(target1))
-        Assert.assertNull(locator.locate(target2))
+        assertNull(locator.locate(target1))
+        assertNull(locator.locate(target2))
     }
 }

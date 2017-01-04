@@ -14,6 +14,10 @@ fun requireInnerFsPath(p: Path?): InnerPath =
 data class InnerPath(val innerFs: InnerFileSystem,
                      val pathSegments: List<String>) : Path {
 
+    init {
+        require(pathSegments.all { NameChecker.isValidName(it) }) { "Invalid path segments" }
+    }
+
     //region Transformation
 
     override fun toFile(): File = throw UnsupportedOperationException()
@@ -27,6 +31,8 @@ data class InnerPath(val innerFs: InnerFileSystem,
             InnerPath(innerFs, pathSegments.subList(beginIndex, endIndex))
 
     override fun getFileName(): Path = InnerPath(innerFs, pathSegments.takeLast(1))
+
+    val fileNameString get() = pathSegments.last()
 
     override fun getName(index: Int): Path = InnerPath(innerFs, listOf(pathSegments[index]))
 
@@ -69,16 +75,16 @@ data class InnerPath(val innerFs: InnerFileSystem,
         }
     }
 
-    override fun resolveSibling(other: String?): Path = resolveSibling(innerFs.getPath(other))
+    override fun resolveSibling(other: String): Path = resolveSibling(innerFs.getPath(other))
 
-    override fun resolve(other: Path?): Path {
+    override fun resolve(other: Path?): InnerPath {
         val p = requireInnerFsPath(other)
         if (p.isAbsolute)
             return p
         return InnerPath(innerFs, pathSegments + p.pathSegments)
     }
 
-    override fun resolve(other: String?): Path = resolve(innerFs.getPath(other))
+    override fun resolve(other: String): InnerPath = resolve(innerFs.getPath(other))
 
     override fun normalize(): Path = InnerPath(innerFs, normalizedPathSegments(pathSegments))
 
@@ -105,7 +111,7 @@ data class InnerPath(val innerFs: InnerFileSystem,
         return pathSegments.takeLast(that.pathSegments.size) == that.pathSegments
     }
 
-    override fun endsWith(other: String?): Boolean {
+    override fun endsWith(other: String): Boolean {
         return endsWith(innerFs.getPath(other))
     }
 
@@ -120,7 +126,7 @@ data class InnerPath(val innerFs: InnerFileSystem,
         return pathSegments.take(p.pathSegments.size) == p.pathSegments
     }
 
-    override fun startsWith(other: String?): Boolean = startsWith(innerFs.getPath(other))
+    override fun startsWith(other: String): Boolean = startsWith(innerFs.getPath(other))
 
     override fun compareTo(other: Path?): Int {
         val p = requireInnerFsPath(other)

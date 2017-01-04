@@ -24,3 +24,11 @@ internal fun Boolean.asByte() = if (this) 1.toByte() else 0.toByte()
 internal fun Byte.asBoolean() = this != 0.toByte()
 
 internal fun negativeTransform(l: Long) = -1 * l - 1
+
+internal inline fun <T> Iterable<T>.sumByLong(selector: (T) -> Long): Long {
+    var sum = 0L
+    for (element in this) {
+        sum += selector(element)
+    }
+    return sum
+}

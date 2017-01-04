@@ -1,4 +1,4 @@
-
+package com.github.h0tk3y.innerFs
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 

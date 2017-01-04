@@ -1,4 +1,4 @@
-
+package com.github.h0tk3y.innerFs
 import sun.nio.fs.DefaultFileSystemProvider
 import java.io.IOException
 import java.net.URI
@@ -13,7 +13,7 @@ import java.nio.file.spi.FileSystemProvider
 
 private val createdFileSystems = mutableMapOf<Path, InnerFileSystem>()
 
-class InnerFileSystemProvider private constructor() : FileSystemProvider() {
+class InnerFileSystemProvider constructor() : FileSystemProvider() {
     //region Java NIO SPI
 
     override fun checkAccess(path: Path, vararg modes: AccessMode?) {

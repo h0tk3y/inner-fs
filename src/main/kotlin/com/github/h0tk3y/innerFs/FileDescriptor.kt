@@ -1,3 +1,5 @@
+package com.github.h0tk3y.innerFs
+
 /**
  * Created by igushs on 1/1/17.
  */

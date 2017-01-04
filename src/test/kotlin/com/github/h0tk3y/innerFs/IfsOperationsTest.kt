@@ -1,10 +1,8 @@
-import org.junit.jupiter.api.AfterEach
+package com.github.h0tk3y.innerFs
+
 import org.junit.jupiter.api.Assertions.*
-import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
-import java.nio.file.Files
-import java.nio.file.Paths
 
 
 @ExtendWith(IfsExternalResource::class)
@@ -12,17 +10,6 @@ class IfsOperationsTest {
 
     @InjectIfs
     lateinit var ifs: InnerFileSystem
-
-    @BeforeEach fun initIfs() {
-        val file = Files.createTempFile(Paths.get("."), "innerFs", ".ifs")
-        Files.delete(file)
-        ifs = InnerFileSystemProvider.instance.newFileSystem(file, emptyMap<String, Unit>())
-    }
-
-    @AfterEach fun closeFs() {
-        ifs.close()
-        Files.delete(ifs.underlyingPath)
-    }
 
     @Test fun testHasUnallocatedEntry() {
         val entry = ifs.getFreeBlocks()

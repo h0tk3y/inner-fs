@@ -1,3 +1,5 @@
+package com.github.h0tk3y.innerFs
+
 import java.nio.ByteBuffer
 
 internal const val EMPTY_ENTRY_NAME = "---"

@@ -1,3 +1,5 @@
+package com.github.h0tk3y.innerFs
+
 import org.junit.jupiter.api.extension.AfterEachCallback
 import org.junit.jupiter.api.extension.BeforeEachCallback
 import org.junit.jupiter.api.extension.TestExtensionContext
@@ -24,7 +26,7 @@ internal class IfsExternalResource : BeforeEachCallback, AfterEachCallback {
     override fun beforeEach(context: TestExtensionContext) = ifsProperties(context).forEach {
         val file = Files.createTempFile(Paths.get("."), "innerFs", ".ifs")
         Files.delete(file)
-        val ifs = InnerFileSystemProvider.instance.newFileSystem(file, emptyMap<String, Unit>())
+        val ifs = InnerFileSystemProvider().newFileSystem(file, emptyMap<String, Unit>())
         it.setter.call(context.testInstance, ifs)
     }
 

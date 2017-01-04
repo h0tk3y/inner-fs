@@ -1,4 +1,6 @@
-import CriticalLevel.*
+package com.github.h0tk3y.innerFs
+
+import com.github.h0tk3y.innerFs.CriticalLevel.*
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.MappedByteBuffer

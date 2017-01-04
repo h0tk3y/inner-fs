@@ -1,3 +1,5 @@
+package com.github.h0tk3y.innerFs
+
 import java.nio.file.FileStore
 import java.nio.file.attribute.BasicFileAttributeView
 import java.nio.file.attribute.FileAttributeView

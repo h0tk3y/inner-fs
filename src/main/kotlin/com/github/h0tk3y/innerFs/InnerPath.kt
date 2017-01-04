@@ -1,3 +1,5 @@
+package com.github.h0tk3y.innerFs
+
 import com.github.h0tk3y.kotlinFun.lexicographically
 import java.io.File
 import java.net.URI

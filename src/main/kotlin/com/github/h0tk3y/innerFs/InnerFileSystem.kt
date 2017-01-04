@@ -1,5 +1,5 @@
-
-import InnerFileSystem.CreateMode.*
+package com.github.h0tk3y.innerFs
+import com.github.h0tk3y.innerFs.InnerFileSystem.CreateMode.*
 import kotlinx.coroutines.generate
 import java.io.FileNotFoundException
 import java.io.IOException
@@ -390,7 +390,7 @@ class InnerFileSystem(val underlyingPath: Path,
         require(path != path.root)
 
         val parent = path.parent!!
-        val parentBlock = locateBlock(parent) ?: throw java.nio.file.NoSuchFileException("$parent")
+        val parentBlock = locateBlock(parent) ?: throw NoSuchFileException("$parent")
         criticalForBlock(parentBlock, write = true) {
             val entries = entriesFromBlocksAt(parentBlock)
             if (entries.any { (_, e) -> e.name == path.fileNameString })

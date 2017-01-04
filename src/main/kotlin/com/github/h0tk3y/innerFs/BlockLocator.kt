@@ -1,7 +1,9 @@
+package com.github.h0tk3y.innerFs
+
 internal class BlockLocator(initialBlockLocation: Long,
-                   val blockDataSize: Int = dataBytesInBlock,
-                   val blockHeaderSize: Int = BlockHeader.size,
-                   val blockReader: (offset: Long) -> BlockHeader) {
+                            val blockDataSize: Int = dataBytesInBlock,
+                            val blockHeaderSize: Int = BlockHeader.size,
+                            val blockReader: (offset: Long) -> BlockHeader) {
 
     //Stores starts of blocks
     private val locationList = mutableListOf(initialBlockLocation)

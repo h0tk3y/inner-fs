@@ -1,4 +1,4 @@
-
+package com.github.h0tk3y.innerFs
 import java.nio.ByteBuffer
 import java.nio.channels.ReadableByteChannel
 import java.nio.channels.WritableByteChannel

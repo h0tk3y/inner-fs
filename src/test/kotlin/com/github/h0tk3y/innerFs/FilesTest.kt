@@ -1,6 +1,6 @@
-
-import InnerFileSystem.CreateMode.CREATE_OR_OPEN
-import InnerFileSystem.CreateMode.OPEN_OR_FAIL
+package com.github.h0tk3y.innerFs
+import com.github.h0tk3y.innerFs.InnerFileSystem.CreateMode.CREATE_OR_OPEN
+import com.github.h0tk3y.innerFs.InnerFileSystem.CreateMode.OPEN_OR_FAIL
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
@@ -36,7 +36,7 @@ class FilesTest {
         assertEquals(10, reopenedAgain.size())
 
         ifs.close()
-        val newFs = InnerFileSystemProvider.instance.newFileSystem(ifs.underlyingPath, emptyMap<String, Any>())
+        val newFs = InnerFileSystemProvider().newFileSystem(ifs.underlyingPath, emptyMap<String, Any>())
 
         val reopenedAfterClose = newFs.openFile(newFs.getPath("/a.txt"), true, true, false, OPEN_OR_FAIL)
         assertEquals(10, reopenedAfterClose.size())

@@ -42,7 +42,7 @@ class InnerFileSystemProvider private constructor() : FileSystemProvider() {
             if (Files.isDirectory(s)) {
                 Files.createDirectory(p)
             } else {
-                s.innerFs.openFile(s, read = true, create = InnerFileSystem.CreateMode.FAIL_IF_NOT_EXISTS).use { sFile ->
+                s.innerFs.openFile(s, read = true, create = InnerFileSystem.CreateMode.OPEN_OR_FAIL).use { sFile ->
                     if (Files.exists(p))
                         if (StandardCopyOption.REPLACE_EXISTING !in options)
                             throw FileAlreadyExistsException("$p") else
@@ -92,7 +92,7 @@ class InnerFileSystemProvider private constructor() : FileSystemProvider() {
                 if (Files.isDirectory(s))
                     throw IOException("Directory $s cannot be moved. Use `Files.walkFileTree` + `copy` instead")
 
-                s.innerFs.openFile(s, read = true, create = InnerFileSystem.CreateMode.FAIL_IF_NOT_EXISTS).use { sFile ->
+                s.innerFs.openFile(s, read = true, create = InnerFileSystem.CreateMode.OPEN_OR_FAIL).use { sFile ->
                     if (Files.exists(p))
                         if (replaceExisting)
                             throw FileAlreadyExistsException("$p") else
@@ -241,7 +241,7 @@ class InnerFileSystemProvider private constructor() : FileSystemProvider() {
         return p.innerFs.openFile(p, read, write, append, create = when {
             createNew -> InnerFileSystem.CreateMode.CREATE_OR_FAIL
             create -> InnerFileSystem.CreateMode.CREATE_OR_OPEN
-            else -> InnerFileSystem.CreateMode.FAIL_IF_NOT_EXISTS
+            else -> InnerFileSystem.CreateMode.OPEN_OR_FAIL
         })
     }
 

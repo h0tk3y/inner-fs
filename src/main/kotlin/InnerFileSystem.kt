@@ -297,7 +297,7 @@ class InnerFileSystem(val underlyingPath: Path,
         underlyingChannel.write(newHeader.bytes(), lastBlockLocation)
     }
 
-    enum class CreateMode { FAIL_IF_NOT_EXISTS, CREATE_OR_OPEN, CREATE_OR_FAIL }
+    enum class CreateMode { OPEN_OR_FAIL, CREATE_OR_OPEN, CREATE_OR_FAIL }
 
     fun directorySequence(path: InnerPath): Sequence<Path> {
         require(path.innerFs == this) { "The path '$path' doesn't belong to this file system" }
@@ -366,7 +366,7 @@ class InnerFileSystem(val underlyingPath: Path,
                 }
             }
 
-            if (create == FAIL_IF_NOT_EXISTS)
+            if (create == OPEN_OR_FAIL)
                 throw NoSuchFileException("File doesn't exist for path '$path'")
 
             if (locatedEntry?.entry?.isDirectory ?: false)

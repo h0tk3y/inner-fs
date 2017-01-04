@@ -1,6 +1,6 @@
 
 import InnerFileSystem.CreateMode.CREATE_OR_OPEN
-import InnerFileSystem.CreateMode.FAIL_IF_NOT_EXISTS
+import InnerFileSystem.CreateMode.OPEN_OR_FAIL
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
@@ -38,7 +38,7 @@ class FilesTest {
         ifs.close()
         val newFs = InnerFileSystemProvider.instance.newFileSystem(ifs.underlyingPath, emptyMap<String, Any>())
 
-        val reopenedAfterClose = newFs.openFile(newFs.getPath("/a.txt"), true, true, false, FAIL_IF_NOT_EXISTS)
+        val reopenedAfterClose = newFs.openFile(newFs.getPath("/a.txt"), true, true, false, OPEN_OR_FAIL)
         assertEquals(10, reopenedAfterClose.size())
     }
 
@@ -73,7 +73,7 @@ class FilesTest {
         ifs.deleteFile(ifs.getPath("/a.txt"))
 
         assertThrows<NoSuchFileException> {
-            ifs.openFile(ifs.getPath("/a.txt"), read = true, write = true, create = FAIL_IF_NOT_EXISTS, append = false)
+            ifs.openFile(ifs.getPath("/a.txt"), read = true, write = true, create = OPEN_OR_FAIL, append = false)
         }
     }
 

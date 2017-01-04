@@ -191,7 +191,7 @@ internal class BlocksFileChannel(val fileDescriptor: FileDescriptor,
         fileDescriptor.critical(READ) {
             val result = readBuffer(dst, currentPosition)
             currentPosition += result
-            return result
+            return if (result == 0 && currentPosition == size()) -1 else result
         }
     }
 

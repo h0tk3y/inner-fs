@@ -1,3 +1,4 @@
+
 import InnerFileSystem.CreateMode.*
 import kotlinx.coroutines.generate
 import java.io.FileNotFoundException
@@ -132,38 +133,41 @@ class InnerFileSystem(val underlyingPath: Path,
     }
 
     internal fun locateBlock(path: InnerPath, startingFromLocation: Long = ROOT_LOCATION) =
-            locate(path, startingFromLocation) { it }
+            locateBlock(path, false, startingFromLocation) { it }
 
-    private fun <T> locate(path: InnerPath, startingFromLocation: Long = ROOT_LOCATION, transform: (Long) -> T): T? {
-        fun locateSegmentBlock(location: Long, segmentIndex: Int): T? {
-            criticalForBlock(location, write = false) {
-                val located = entriesFromBlocksAt(location).find { (_, e) ->
-                    e.firstBlockLocation > BlockHeader.NO_NEXT_BLOCK
-                    e.name == path.pathSegments[segmentIndex] &&
+    private fun <T> locateBlock(path: InnerPath, write: Boolean = false, startingFromLocation: Long = ROOT_LOCATION, transform: (Long) -> T): T? {
+        var currentBlock = startingFromLocation
+        for (i in path.pathSegments.indices.drop(if (path.isAbsolute) 1 else 0)) {
+            criticalForBlock(currentBlock, write) {
+                val located = entriesFromBlocksAt(currentBlock).find { (_, e) ->
+                    e.exists &&
+                    e.name == path.pathSegments[i] &&
                     e.isDirectory
                 } ?: return null
-                val result = located.entry.firstBlockLocation
-                if (segmentIndex == path.pathSegments.lastIndex) {
-                    return transform(result)
+                val nextBlock = located.entry.firstBlockLocation
+                if (i == path.pathSegments.lastIndex) {
+                    return transform(nextBlock)
                 }
-                return locateSegmentBlock(result, segmentIndex + 1)
+                currentBlock = nextBlock
             }
         }
-        if (path == path.root)
-            return criticalForBlock(ROOT_LOCATION, write = false) { transform(ROOT_LOCATION) }
-        return locateSegmentBlock(startingFromLocation, if (path.isAbsolute) 1 else 0)
+        return transform(ROOT_LOCATION)
     }
 
-    internal fun locateEntry(path: InnerPath, startingFromLocation: Long = ROOT_LOCATION): Located<DirectoryEntry>? {
-        require(path.isAbsolute)
+    internal fun locateEntry(path: InnerPath, startingFromLocation: Long = ROOT_LOCATION) =
+            locateEntry(path, false, startingFromLocation) { it }
 
+    internal fun <T> locateEntry(path: InnerPath,
+                                 write: Boolean = false,
+                                 startingFromLocation: Long = ROOT_LOCATION, transform: (Located<DirectoryEntry>) -> T): T? {
         if (path == path.root)
             return null
 
         val parent = path.parent
-        return locate(parent ?: InnerPath(this, emptyList()), startingFromLocation) { parentBlock ->
-            criticalForBlock(parentBlock, write = false) {
-                entriesFromBlocksAt(parentBlock).find { it.entry.exists && path.fileNameString == it.entry.name }
+        return locateBlock(parent ?: InnerPath(this, emptyList()), write, startingFromLocation) { parentBlock ->
+            criticalForBlock(parentBlock, write) {
+                transform(entriesFromBlocksAt(parentBlock).find { it.entry.exists && path.fileNameString == it.entry.name }
+                          ?: return@criticalForBlock null)
             }
         }
     }
@@ -216,7 +220,7 @@ class InnerFileSystem(val underlyingPath: Path,
     }
 
     internal fun markEntryDeleted(directoryLocation: Long, entryLocation: Long) {
-        rewriteEntry(directoryLocation, entryLocation, DirectoryEntry(false, BlockHeader.NO_NEXT_BLOCK, -1, ""))
+        rewriteEntry(directoryLocation, entryLocation, DirectoryEntry(false, BlockHeader.NO_NEXT_BLOCK, -1, EMPTY_ENTRY_NAME))
     }
 
     internal fun getFreeBlocks(): Located<DirectoryEntry> =
@@ -302,11 +306,14 @@ class InnerFileSystem(val underlyingPath: Path,
     fun directorySequence(path: InnerPath): Sequence<Path> {
         require(path.innerFs == this) { "The path '$path' doesn't belong to this file system" }
         require(path.isAbsolute) { "The path should be absolute." }
-        val (_, entry) = locateEntry(path, 0L)
-                         ?: throw FileNotFoundException("Directory '$path' does not exist and cannot be deleted")
-        if (!entry.isDirectory)
-            throw NotDirectoryException("File '$path' is not a directory")
-        return entriesFromBlocksAt(entry.firstBlockLocation)
+        val location = if (path.root == path)
+            ROOT_LOCATION else
+            locateEntry(path, 0L)?.entry
+                    ?.apply { if (!isDirectory) throw NotDirectoryException("File '$path' is not a directory") }
+                    ?.firstBlockLocation
+            ?: throw FileNotFoundException("Directory '$path' does not exist.")
+
+        return entriesFromBlocksAt(location)
                 .filter { it.entry.exists }
                 .map { InnerPath(this, path.pathSegments + it.entry.name) }
     }
@@ -315,28 +322,22 @@ class InnerFileSystem(val underlyingPath: Path,
         require(path.innerFs == this) { "The path '$path' doesn't belong to this file system" }
         require(path.isAbsolute) { "The path should be absolute." }
         require(path != path.root) { "Root file '/' cannot be deleted" }
-        val parent = path.parent!!
-        val parentLocation =
-                locateBlock(parent)
-                ?: throw NoSuchFileException("$parent", null, "Parent directory '$parent' not found for path '$path'")
-
-        criticalForBlock(parentLocation, write = true) {
+        val parent = path.normalize().parent!!
+        locateBlock(parent, write = true) { parentLocation ->
             synchronized(openFileDescriptors) {
-                val (location, entry) = entriesFromBlocksAt(parentLocation)
-                                                .find { (_, e) -> e.name == path.fileNameString }
-                                        ?: throw NoSuchFileException("'$path'")
-                if (entry.isDirectory && criticalForBlock(entry.firstBlockLocation, false) {
-                    entriesFromBlocksAt(entry.firstBlockLocation).filter { it.entry.exists }.any()
-                }) {
-                    throw DirectoryNotEmptyException("$path")
-                }
-                val fd = fileDescriptorByBlock[entry.firstBlockLocation]
-                if (fd != null)
-                    throw FileSystemException("$path", null, "The file cannot be deleted because it is in use")
-                blocksSequence(entry.firstBlockLocation).forEach { (location, _) -> deallocateBlock(location) }
-                markEntryDeleted(parentLocation, location)
+                locateEntry(path.fileName, true, parentLocation) { (location, entry) ->
+                    if (entry.isDirectory && criticalForBlock(entry.firstBlockLocation, false) {
+                        entriesFromBlocksAt(entry.firstBlockLocation).filter { it.entry.exists }.any()
+                    }) {
+                        throw DirectoryNotEmptyException("$path")
+                    }
+                    if (fileDescriptorByBlock.contains(entry.firstBlockLocation))
+                        throw FileSystemException("$path", null, "The file cannot be deleted because it is in use")
+                    blocksSequence(entry.firstBlockLocation).forEach { (location, _) -> deallocateBlock(location) }
+                    markEntryDeleted(parentLocation, location)
+                } ?: throw NoSuchFileException("'$path'")
             }
-        }
+        } ?: throw NoSuchFileException("$parent", null, "Parent directory '$parent' not found for path '$path'")
     }
 
     fun openFile(path: InnerPath,
@@ -346,12 +347,12 @@ class InnerFileSystem(val underlyingPath: Path,
                  create: CreateMode = CREATE_OR_OPEN): FileChannel {
         require(path.innerFs == this) { "The path '$path' doesn't belong to this file system" }
         require(path.isAbsolute) { "The path should be absolute." }
-        val parent = path.parent!!
+        val parent = path.normalize().parent!!
         val parentLocation = locateBlock(parent, ROOT_LOCATION)
                              ?: throw FileNotFoundException("Parent directory '$parent' not found for path '$path'")
 
         criticalForBlock(parentLocation, write = true) {
-            val locatedEntry = entriesFromBlocksAt(parentLocation).find { (_, e) -> e.name == path.pathSegments.last() }
+            val locatedEntry = entriesFromBlocksAt(parentLocation).find { (_, e) -> e.name == path.fileNameString }
 
             if (locatedEntry != null && !locatedEntry.entry.isDirectory) {
                 val fileLocation = locatedEntry.entry.firstBlockLocation

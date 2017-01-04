@@ -1,3 +1,4 @@
+
 import sun.nio.fs.DefaultFileSystemProvider
 import java.io.IOException
 import java.net.URI
@@ -10,14 +11,9 @@ import java.nio.file.spi.FileSystemProvider
  * Created by igushs on 12/21/16.
  */
 
+private val createdFileSystems = mutableMapOf<Path, InnerFileSystem>()
+
 class InnerFileSystemProvider private constructor() : FileSystemProvider() {
-
-    companion object {
-        val instance by lazy { InnerFileSystemProvider() }
-    }
-
-    private val createdFileSystems = mutableMapOf<Path, InnerFileSystem>()
-
     //region Java NIO SPI
 
     override fun checkAccess(path: Path, vararg modes: AccessMode?) {
@@ -30,8 +26,8 @@ class InnerFileSystemProvider private constructor() : FileSystemProvider() {
     }
 
     override fun copy(source: Path?, target: Path?, vararg options: CopyOption?) {
-        val s = requireInnerFsPath(source)
-        val p = requireInnerFsPath(target)
+        val s = requireInnerFsPath(source?.normalize())
+        val p = requireInnerFsPath(target?.normalize())
         require(p.isAbsolute)
         require(s.isAbsolute)
 
@@ -56,8 +52,8 @@ class InnerFileSystemProvider private constructor() : FileSystemProvider() {
     }
 
     override fun move(source: Path?, target: Path?, vararg options: CopyOption?) {
-        val s = requireInnerFsPath(source)
-        val p = requireInnerFsPath(target)
+        val s = requireInnerFsPath(source?.normalize())
+        val p = requireInnerFsPath(target?.normalize())
         require(p.isAbsolute)
         require(s.isAbsolute)
 
@@ -70,24 +66,29 @@ class InnerFileSystemProvider private constructor() : FileSystemProvider() {
             else -> throw UnsupportedOperationException("Option $o is not supported")
         }
 
-        if (Files.isSameFile(source, target))
+        if (source?.normalize() == target?.normalize())
             return
 
         directoriesOperation(s, p, atomicMove) {
             if (s.innerFs == p.innerFs) {
-                val (sLocation, sEntry) = s.innerFs.locateEntry(s) ?: throw NoSuchFileException("$s")
-                val sParentBlock = s.innerFs.locateBlock(requireInnerFsPath(s.parent)) ?: throw NoSuchFileException("${s.parent}")
-                val pParentBlock = p.innerFs.locateBlock(requireInnerFsPath(p.parent)) ?: throw NoSuchFileException("${p.parent}")
-                val locatedPEntry = p.innerFs.locateEntry(p)
-                if (locatedPEntry != null) {
-                    if (StandardCopyOption.REPLACE_EXISTING !in options)
-                        throw FileAlreadyExistsException("$p")
-                    p.innerFs.deleteFile(p)
-                    p.innerFs.rewriteEntry(pParentBlock, locatedPEntry.location, sEntry)
-                } else {
-                    p.innerFs.addEntryToDirectory(pParentBlock, sEntry)
+                synchronized(p.innerFs.openFileDescriptors) {
+                    val (sLocation, sEntry) = s.innerFs.locateEntry(s) ?: throw NoSuchFileException("$s")
+                    val sParentBlock = s.innerFs.locateBlock(requireInnerFsPath(s.parent)) ?: throw NoSuchFileException("${s.parent}")
+                    val pParentBlock = p.innerFs.locateBlock(requireInnerFsPath(p.parent)) ?: throw NoSuchFileException("${p.parent}")
+                    val resultEntry = sEntry.copy(name = p.fileNameString)
+                    val locatedPEntry = p.innerFs.locateEntry(p)
+                    if (locatedPEntry != null) {
+                        if (StandardCopyOption.REPLACE_EXISTING !in options)
+                            throw FileAlreadyExistsException("$p")
+                        p.innerFs.deleteFile(p)
+                        p.innerFs.rewriteEntry(pParentBlock, locatedPEntry.location, resultEntry)
+                    } else {
+                        p.innerFs.addEntryToDirectory(pParentBlock, resultEntry)
+                    }
+                    if (s.innerFs.fileDescriptorByBlock.containsKey(sEntry.firstBlockLocation))
+                        throw FileSystemException("$s", null, "File cannot be moved because it is in use")
+                    s.innerFs.markEntryDeleted(sParentBlock, sLocation)
                 }
-                s.innerFs.markEntryDeleted(sParentBlock, sLocation)
             } else {
                 if (Files.isDirectory(s))
                     throw IOException("Directory $s cannot be moved. Use `Files.walkFileTree` + `copy` instead")
@@ -107,15 +108,17 @@ class InnerFileSystemProvider private constructor() : FileSystemProvider() {
 
     private inline fun directoriesOperation(s: InnerPath, p: InnerPath, atomic: Boolean, actions: () -> Unit) {
         if (atomic) {
-            val sParent = requireInnerFsPath(s.parent)
-            val pParent = requireInnerFsPath(p.parent)
+            val sParent = requireInnerFsPath(s.parent?.normalize())
+            val pParent = requireInnerFsPath(p.parent?.normalize())
             val sParentBlock = s.innerFs.locateBlock(sParent) ?: throw NoSuchFileException("$sParent")
-            val pParentBlock = p.innerFs.locateBlock(sParent) ?: throw NoSuchFileException("$pParent")
+            val pParentBlock = p.innerFs.locateBlock(pParent) ?: throw NoSuchFileException("$pParent")
             // To maintain the globally ordered locking, check if one of the paths is an ancestor of the other
             val outer = if (sParent.startsWith(pParent)) sParentBlock else pParentBlock
+            val outerFs = if (outer == sParentBlock) s.innerFs else p.innerFs
             val inner = if (outer == sParentBlock) pParentBlock else sParentBlock
-            s.innerFs.criticalForBlock(outer, write = true) {
-                s.innerFs.criticalForBlock(inner, write = true) {
+            val innerFs = if (outerFs == s.innerFs) p.innerFs else s.innerFs
+            outerFs.criticalForBlock(outer, write = true) {
+                innerFs.criticalForBlock(inner, write = true) {
                     actions()
                 }
             }
@@ -127,7 +130,7 @@ class InnerFileSystemProvider private constructor() : FileSystemProvider() {
     override fun <V : FileAttributeView?> getFileAttributeView(path: Path?, type: Class<V>?, vararg options: LinkOption?): V {
         if (type != BasicFileAttributeView::class.java)
             throw UnsupportedOperationException()
-        val p = requireInnerFsPath(path)
+        val p = requireInnerFsPath(path?.normalize())
         val (_, e) = p.innerFs.locateEntry(p) ?: throw NoSuchFileException("$path")
         @Suppress("UNCHECKED_CAST")
         return object : BasicFileAttributeView {
@@ -186,8 +189,8 @@ class InnerFileSystemProvider private constructor() : FileSystemProvider() {
     override fun getScheme(): String = "ifs"
 
     override fun isHidden(path: Path?): Boolean {
-        requireNotNull(path)
-        return path!!.fileName.startsWith(".")
+        val p = requireInnerFsPath(path)
+        return p.fileNameString.startsWith(".")
     }
 
     override fun newDirectoryStream(dir: Path?, filter: DirectoryStream.Filter<in Path>): DirectoryStream<Path> {

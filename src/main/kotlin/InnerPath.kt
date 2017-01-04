@@ -30,7 +30,7 @@ data class InnerPath(val innerFs: InnerFileSystem,
     override fun subpath(beginIndex: Int, endIndex: Int): Path =
             InnerPath(innerFs, pathSegments.subList(beginIndex, endIndex))
 
-    override fun getFileName(): Path = InnerPath(innerFs, pathSegments.takeLast(1))
+    override fun getFileName() = InnerPath(innerFs, pathSegments.takeLast(1))
 
     val fileNameString get() = pathSegments.last()
 
@@ -86,7 +86,7 @@ data class InnerPath(val innerFs: InnerFileSystem,
 
     override fun resolve(other: String): InnerPath = resolve(innerFs.getPath(other))
 
-    override fun normalize(): Path = InnerPath(innerFs, normalizedPathSegments(pathSegments))
+    override fun normalize() = InnerPath(innerFs, normalizedPathSegments(pathSegments))
 
     private fun normalizedPathSegments(pathSegments: List<String>): List<String> {
         val result = mutableListOf<String>()

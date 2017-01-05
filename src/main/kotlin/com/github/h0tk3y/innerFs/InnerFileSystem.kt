@@ -14,6 +14,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.withLock
 
 internal const val ROOT_LOCATION = 0L
+internal const val UNALLOCATED_BLOCKS = -1L
 
 private val singleInnerFileSystemProvider = InnerFileSystemProvider()
 
@@ -240,7 +241,7 @@ class InnerFileSystem(val underlyingPath: Path,
                     .single()
 
     internal fun deallocateBlock(blockLocation: Long) {
-        criticalForBlock(0, write = true) {
+        criticalForBlock(UNALLOCATED_BLOCKS, write = true) {
             val (location, entry) = getFreeBlocks()
             val knownFreeBlock = negativeTransform(entry.firstBlockLocation) // to non-negative
             val newEntry = entry.copy(firstBlockLocation = negativeTransform(blockLocation)) // back to negative
@@ -262,7 +263,7 @@ class InnerFileSystem(val underlyingPath: Path,
 
     /** Allocates a free block, initializes its data part with [initData] function and returns its start location.*/
     internal fun allocateBlock(initData: (dataBuffer: ByteBuffer) -> Unit): Long {
-        criticalForBlock(0, write = true) {
+        criticalForBlock(UNALLOCATED_BLOCKS, write = true) {
             val freeBlocks = getFreeBlocks()
 
             val knownFreeBlock = negativeTransform(freeBlocks.entry.firstBlockLocation) // to positive
@@ -337,16 +338,18 @@ class InnerFileSystem(val underlyingPath: Path,
         locateBlock(parent, write = true) { parentLocation ->
             synchronized(openFileDescriptors) {
                 locateEntry(path.fileName, true, parentLocation) { (location, entry) ->
-                    if (entry.isDirectory) criticalForBlock(entry.firstBlockLocation, false) {
-                        val hasEntries = entriesFromBlocksAt(entry.firstBlockLocation).any { (_, v) -> v.exists }
-                        if (hasEntries)
-                            throw DirectoryNotEmptyException("$path")
-                    }
+                    criticalForBlock(entry.firstBlockLocation, write = true) {
+                        if (entry.isDirectory) {
+                            val hasEntries = entriesFromBlocksAt(entry.firstBlockLocation).any { (_, v) -> v.exists }
+                            if (hasEntries)
+                                throw DirectoryNotEmptyException("$path")
+                        }
 
-                    if (fileDescriptorByBlock.containsKey(entry.firstBlockLocation))
-                        throw FileIsInUseException(path, "Cannot delete the file")
-                    blocksSequence(entry.firstBlockLocation).forEach { (location, _) -> deallocateBlock(location) }
-                    markEntryDeleted(parentLocation, location)
+                        if (fileDescriptorByBlock.containsKey(entry.firstBlockLocation))
+                            throw FileIsInUseException(path, "Cannot delete the file")
+                        blocksSequence(entry.firstBlockLocation).forEach { (location, _) -> deallocateBlock(location) }
+                        markEntryDeleted(parentLocation, location)
+                    }
                 } ?: throw NoSuchFileException("'$path'")
             }
         } ?: throw NoSuchFileException("$parent", null, "Parent directory '$parent' not found for path '$path'")

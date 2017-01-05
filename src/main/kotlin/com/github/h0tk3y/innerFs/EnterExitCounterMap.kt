@@ -8,7 +8,7 @@ package com.github.h0tk3y.innerFs
  * Maintains counters associated with [K] items and handles first entry of an item (i.e. when its counter switches
  * from 0 to 1) and *exit* of the last item (i.e. when the counter switches from 1 to 0).
  */
-class EnterExitCounterMap<K>(
+internal class EnterExitCounterMap<K>(
         val onEnter: (K) -> Unit,
         val onExit: (K) -> Unit) {
 

@@ -12,7 +12,7 @@ class InnerFileStore(val innerFs: InnerFileSystem) : FileStore() {
 
     override fun getTotalSpace(): Long = innerFs.underlyingChannel.size()
 
-    override fun getUsableSpace(): Long = totalSpace //todo
+    override fun getUsableSpace(): Long = totalSpace
 
     override fun type(): String = "ifs"
 
@@ -25,5 +25,7 @@ class InnerFileStore(val innerFs: InnerFileSystem) : FileStore() {
 
     override fun isReadOnly() = innerFs.isReadOnly
 
-    override fun getUnallocatedSpace() = 0L //todo
+    override fun getUnallocatedSpace() = innerFs.criticalForBlock(UNALLOCATED_BLOCKS, write = false) {
+        innerFs.blocksSequence(innerFs.getFreeBlocks().location).count() * BLOCK_SIZE.toLong()
+    }
 }

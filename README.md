@@ -86,16 +86,21 @@ To avoid deadlocks, InnerFS uses locks ordering. The order is, as follows:
 
 * If block *a* represents a parent or an ancestor directory of file system entry *b*, then *a* cannot be locked while *b* is already locked. The relation *'represents a parent or an ancestor'* can change for two blocks *a* and *b* over time, but this can only happen if one of them is deallocated and then allocated again. This cannot happen inside a single lock on both of the blocks.
 
+* In case neither of blocks *a* and *b* represents the other's parent or ancestor, if `a < b` (as block location) then, if *b* is locked, *a* should not be locked before *b* is unlocked. If there are several unconnected parent-child chains or a chain splitting into several ones in a node, they should be ordered by their minimum block number and then each locked from parent to child, but this implementation does not use such complex locks, there are usually at most two blocks locked by an operation.
+
 * After `UNALLOCATED_BLOCKS` is locked, no lock for any other file system object can be taken until `UNALLOCATED_BLOCK` is unlocked.
 
-A simplified locks ordering hierarchy for a file system with items `root { a { c, d }, d }`:
+A simplified locks ordering hierarchy for a file system, assuming that `a < b < c < d`:
 
               root
-             /    \ 
-            a      b
-           / \     |
-          c   d    |
-          |   |    |
+             /    \
+            v      v
+            a ---> b 
+          /   \  /  |
+         v     v    |
+         c --> d    |
+         |     |    |
+         v     v    v
        UNALLOCATED_BLOCKS
       
 ## DSL

@@ -1,4 +1,5 @@
 package com.github.h0tk3y.innerFs
+
 import com.github.h0tk3y.innerFs.InnerFileSystem.CreateMode.*
 import kotlinx.coroutines.generate
 import java.io.FileNotFoundException
@@ -336,9 +337,10 @@ class InnerFileSystem(val underlyingPath: Path,
         require(path != path.root) { "Root file '/' cannot be deleted" }
         val parent = path.normalize().parent!!
         locateBlock(parent, write = true) { parentLocation ->
-            synchronized(openFileDescriptors) {
-                locateEntry(path.fileName, true, parentLocation) { (location, entry) ->
-                    criticalForBlock(entry.firstBlockLocation, write = true) {
+            locateEntry(path.fileName, true, parentLocation) { (location, entry) ->
+                criticalForBlock(entry.firstBlockLocation, false) {
+                    synchronized(openFileDescriptors) {
+
                         if (entry.isDirectory) {
                             val hasEntries = entriesFromBlocksAt(entry.firstBlockLocation).any { (_, v) -> v.exists }
                             if (hasEntries)
@@ -350,8 +352,8 @@ class InnerFileSystem(val underlyingPath: Path,
                         blocksSequence(entry.firstBlockLocation).forEach { (location, _) -> deallocateBlock(location) }
                         markEntryDeleted(parentLocation, location)
                     }
-                } ?: throw NoSuchFileException("'$path'")
-            }
+                }
+            } ?: throw NoSuchFileException("'$path'")
         } ?: throw NoSuchFileException("$parent", null, "Parent directory '$parent' not found for path '$path'")
     }
 

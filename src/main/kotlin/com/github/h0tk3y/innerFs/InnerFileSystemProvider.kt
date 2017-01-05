@@ -309,7 +309,7 @@ class InnerFileSystemProvider : FileSystemProvider() {
             val outer = when {
                 sParent.startsWith(pParent) -> sParentBlock
                 pParent.startsWith(sParent) -> pParentBlock
-                sParentBlock < pParentBlock -> sParentBlock
+                s < p -> sParentBlock
                 else -> pParentBlock
             }
             val outerFs = if (outer == sParentBlock) s.innerFs else p.innerFs

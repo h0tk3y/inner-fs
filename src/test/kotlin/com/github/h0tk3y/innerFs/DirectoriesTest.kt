@@ -13,7 +13,6 @@ import java.nio.file.Files
 @ExtendWith(IfsExternalResource::class)
 class DirectoriesTest {
 
-    @InjectIfs
     lateinit var ifs: InnerFileSystem
 
     @Test fun createAndCheck() {
@@ -53,7 +52,7 @@ class DirectoriesTest {
     }
 
     @Test fun recyclingEntries() {
-        val nItems = 2 * entriesInBlock
+        val nItems = 5 * entriesInBlock
 
         val directory = ifs.getPath("/a/b/c")
         Files.createDirectories(directory)

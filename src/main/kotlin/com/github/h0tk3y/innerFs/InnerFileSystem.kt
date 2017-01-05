@@ -8,7 +8,6 @@ import java.nio.channels.FileChannel
 import java.nio.channels.FileLock
 import java.nio.file.*
 import java.nio.file.attribute.UserPrincipalLookupService
-import java.nio.file.spi.FileSystemProvider
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.locks.ReadWriteLock
 import java.util.concurrent.locks.ReentrantReadWriteLock
@@ -16,8 +15,9 @@ import kotlin.concurrent.withLock
 
 internal const val ROOT_LOCATION = 0L
 
+private val singleInnerFileSystemProvider = InnerFileSystemProvider()
+
 class InnerFileSystem(val underlyingPath: Path,
-                      val provider: InnerFileSystemProvider,
                       createNew: Boolean) : FileSystem() {
 
     private val writable: Boolean
@@ -30,10 +30,12 @@ class InnerFileSystem(val underlyingPath: Path,
             { blockLocksMap.remove(it) })
 
     internal val fileDescriptorByBlock = ConcurrentHashMap<Long, FileDescriptor>()
-    internal val openFileDescriptors = EnterExitCounterMap<Long>({}, { fileDescriptorByBlock.remove(it) })
+
+    // Also used as a monitor for the descriptor-sensitive operations (e.g. checking if a file is open before delete)
+    internal val openFileDescriptors = EnterExitCounterMap<Long>({ }, { fileDescriptorByBlock.remove(it) })
 
     private val singleFileStore = InnerFileStore(this)
-    private val underlyingFileLock: FileLock
+    private val underlyingFileLock: FileLock?
 
     init {
         if (createNew && !Files.exists(underlyingPath)) {
@@ -44,7 +46,11 @@ class InnerFileSystem(val underlyingPath: Path,
                         (if (writable) setOf(StandardOpenOption.WRITE) else emptySet())
         try {
             underlyingChannel = FileChannel.open(underlyingPath, modifiers)
-            underlyingFileLock = underlyingChannel.lock()
+            underlyingFileLock = try {
+                underlyingChannel.lock()
+            } catch (_: UnsupportedOperationException) {
+                null
+            }
             if (createNew)
                 writeRootDirectory()
         } catch (e: IOException) {
@@ -67,14 +73,18 @@ class InnerFileSystem(val underlyingPath: Path,
     override fun getPath(first: String, vararg more: String?) =
             InnerPath(this, first.split("/") + more.toList().filterNotNull())
 
-    override fun provider(): FileSystemProvider = provider
+    // Currently, all the file systems within a class loader return the same provider because all
+    // the instances of `InnerFileSystemProvider` are identical and store no state. This should
+    // be changed if some difference between the providers is introduced (e.g. they are given
+    // some file system parameters, e.g. block size).
+    override fun provider(): InnerFileSystemProvider = singleInnerFileSystemProvider
 
     override fun isOpen(): Boolean = underlyingChannel.isOpen
 
     override fun getUserPrincipalLookupService(): UserPrincipalLookupService = throw NotImplementedError()
 
     override fun close() {
-        if (underlyingChannel.isOpen) underlyingFileLock.release()
+        if (underlyingChannel.isOpen) underlyingFileLock?.release()
         underlyingChannel.close()
     }
 
@@ -151,7 +161,7 @@ class InnerFileSystem(val underlyingPath: Path,
                 currentBlock = nextBlock
             }
         }
-        return transform(ROOT_LOCATION)
+        return transform(currentBlock)
     }
 
     internal fun locateEntry(path: InnerPath, startingFromLocation: Long = ROOT_LOCATION) =
@@ -166,8 +176,9 @@ class InnerFileSystem(val underlyingPath: Path,
         val parent = path.parent
         return locateBlock(parent ?: InnerPath(this, emptyList()), write, startingFromLocation) { parentBlock ->
             criticalForBlock(parentBlock, write) {
-                transform(entriesFromBlocksAt(parentBlock).find { it.entry.exists && path.fileNameString == it.entry.name }
-                          ?: return@criticalForBlock null)
+                val entry = entriesFromBlocksAt(parentBlock).find { it.entry.exists && path.fileNameString == it.entry.name }
+                if (entry == null) null else
+                    transform(entry)
             }
         }
     }
@@ -190,7 +201,7 @@ class InnerFileSystem(val underlyingPath: Path,
     /**
      * Produces a sequence of [Located] [DirectoryEntry] from a sequence of [Located] data blocks represented bytes.
      */
-    internal fun entriesFromBlocks(blocks: Sequence<Located<ByteBuffer>>): Sequence<Located<DirectoryEntry>> = blocks
+    private fun entriesFromBlocks(blocks: Sequence<Located<ByteBuffer>>): Sequence<Located<DirectoryEntry>> = blocks
             .flatMap { (location, data) ->
                 data.position(BlockHeader.size) //Skip the header
                 generateSequence {
@@ -326,13 +337,14 @@ class InnerFileSystem(val underlyingPath: Path,
         locateBlock(parent, write = true) { parentLocation ->
             synchronized(openFileDescriptors) {
                 locateEntry(path.fileName, true, parentLocation) { (location, entry) ->
-                    if (entry.isDirectory && criticalForBlock(entry.firstBlockLocation, false) {
-                        entriesFromBlocksAt(entry.firstBlockLocation).filter { it.entry.exists }.any()
-                    }) {
-                        throw DirectoryNotEmptyException("$path")
+                    if (entry.isDirectory) criticalForBlock(entry.firstBlockLocation, false) {
+                        val hasEntries = entriesFromBlocksAt(entry.firstBlockLocation).any { (_, v) -> v.exists }
+                        if (hasEntries)
+                            throw DirectoryNotEmptyException("$path")
                     }
-                    if (fileDescriptorByBlock.contains(entry.firstBlockLocation))
-                        throw FileSystemException("$path", null, "The file cannot be deleted because it is in use")
+
+                    if (fileDescriptorByBlock.containsKey(entry.firstBlockLocation))
+                        throw FileIsInUseException(path, "Cannot delete the file")
                     blocksSequence(entry.firstBlockLocation).forEach { (location, _) -> deallocateBlock(location) }
                     markEntryDeleted(parentLocation, location)
                 } ?: throw NoSuchFileException("'$path'")
@@ -344,6 +356,7 @@ class InnerFileSystem(val underlyingPath: Path,
                  read: Boolean = true,
                  write: Boolean = true,
                  append: Boolean = false,
+                 truncateExisting: Boolean = false,
                  create: CreateMode = CREATE_OR_OPEN): FileChannel {
         require(path.innerFs == this) { "The path '$path' doesn't belong to this file system" }
         require(path.isAbsolute) { "The path should be absolute." }
@@ -357,10 +370,21 @@ class InnerFileSystem(val underlyingPath: Path,
             if (locatedEntry != null && !locatedEntry.entry.isDirectory) {
                 val fileLocation = locatedEntry.entry.firstBlockLocation
                 synchronized(openFileDescriptors) {
+                    var actualEntry: Located<DirectoryEntry> = locatedEntry // may be rewritten by truncating
+                    if (truncateExisting) {
+                        if (!fileDescriptorByBlock.containsKey(fileLocation)) {
+                            blocksSequence(fileLocation).forEach { deallocateBlock(it.location) }
+                            val block = allocateBlock { initializeDataBlock }
+                            actualEntry =
+                                    actualEntry.copy(value = actualEntry.entry.copy(firstBlockLocation = block, size = 0))
+                            rewriteEntry(parentLocation, actualEntry.location, actualEntry.entry)
+                        } else throw FileIsInUseException(path, "Cannot truncate the file")
+                    }
                     val fd = fileDescriptorByBlock.getOrPut(fileLocation) {
-                        FileDescriptor(this, parentLocation, locatedEntry)
+                        FileDescriptor(this, parentLocation, actualEntry)
                     }
                     fd.openOneFile()
+
                     if (create == CREATE_OR_FAIL)
                         throw FileAlreadyExistsException("File '$path' already exists.")
                     return BlocksFileChannel(fd, read, write, append)

@@ -1,6 +1,6 @@
 package com.github.h0tk3y.innerFs
 
-import org.junit.jupiter.api.Assertions
+import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import java.nio.ByteBuffer
@@ -15,10 +15,8 @@ import java.nio.file.attribute.BasicFileAttributeView
 
 @ExtendWith(IfsExternalResource::class)
 class NioSpiTest {
-    @InjectIfs
     lateinit var ifs: InnerFileSystem
 
-    @InjectIfs
     lateinit var anotherIfs: InnerFileSystem
 
     @Test fun exists() {
@@ -26,11 +24,11 @@ class NioSpiTest {
         file.write(ByteBuffer.allocate(123))
         file.close()
 
-        Assertions.assertTrue(Files.exists(ifs.getPath("/abc.txt")))
+        assertTrue(Files.exists(ifs.getPath("/abc.txt")))
 
         ifs.deleteFile(ifs.getPath("/abc.txt"))
 
-        Assertions.assertFalse(Files.exists(ifs.getPath("/abc.txt")))
+        assertFalse(Files.exists(ifs.getPath("/abc.txt")))
     }
 
     @Test fun moveSameDirectory() {
@@ -38,13 +36,13 @@ class NioSpiTest {
         val file = ifs.openFile(path)
         file.write(ByteBuffer.allocate(123))
         file.close()
-        Assertions.assertTrue(Files.exists(path))
+        assertTrue(Files.exists(path))
 
         val targetPath = path.resolveSibling("def.txt")
         Files.move(path, targetPath)
-        Assertions.assertFalse(Files.exists(path))
-        Assertions.assertTrue(Files.exists(targetPath))
-        Assertions.assertEquals(123L, Files.getFileAttributeView(targetPath, BasicFileAttributeView::class.java).readAttributes().size())
+        assertFalse(Files.exists(path))
+        assertTrue(Files.exists(targetPath))
+        assertEquals(123L, Files.getFileAttributeView(targetPath, BasicFileAttributeView::class.java).readAttributes().size())
     }
 
     @Test fun moveDifferentDirectoriesWithData() {
@@ -67,7 +65,25 @@ class NioSpiTest {
         val bytes = ByteBuffer.allocate(dataSize)
         targetChannel.read(bytes)
         bytes.position(0)
-        (1..dataSize).forEach { Assertions.assertEquals(it.toByte(), bytes.get()) }
+        (1..dataSize).forEach { assertEquals(it.toByte(), bytes.get()) }
+    }
+
+    @Test fun moveInAndOut() {
+        val path = ifs.getPath("/a/b/c/abc.txt")
+        val anotherPath = ifs.getPath("/a/abc.txt")
+
+        Files.createDirectories(path.parent)
+        Files.createFile(path)
+        assertTrue(Files.exists(path))
+        assertFalse(Files.exists(anotherPath))
+
+        Files.move(path, anotherPath)
+        assertFalse(Files.exists(path))
+        assertTrue(Files.exists(anotherPath))
+
+        Files.move(anotherPath, path)
+        assertTrue(Files.exists(path))
+        assertFalse(Files.exists(anotherPath))
     }
 
     @Test fun moveDifferentFileSystemsWithData() {
@@ -90,6 +106,19 @@ class NioSpiTest {
         val bytes = ByteBuffer.allocate(dataSize)
         targetChannel.read(bytes)
         bytes.position(0)
-        (1..dataSize).forEach { Assertions.assertEquals(it.toByte(), bytes.get()) }
+        (1..dataSize).forEach { assertEquals(it.toByte(), bytes.get()) }
+    }
+
+    @Test fun fileAttributes() {
+        val path = ifs.getPath("/abc.txt")
+        val output = Files.newOutputStream(path)
+        output.write("abc".toByteArray())
+        output.close()
+        val attrsView = Files.getFileAttributeView(path, BasicFileAttributeView::class.java)
+        assertEquals("abc.txt", attrsView.name())
+        val attrs = attrsView.readAttributes()
+        assertEquals("abc".toByteArray().size.toLong(), attrs.size())
+        assertTrue(attrs.isRegularFile)
+        assertFalse(attrs.isDirectory)
     }
 }

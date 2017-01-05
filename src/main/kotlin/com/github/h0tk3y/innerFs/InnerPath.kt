@@ -29,6 +29,8 @@ data class InnerPath(val innerFs: InnerFileSystem,
             "${innerFs.underlyingPath.toUri()}!${toAbsolutePath().pathSegments.joinToString(fileSystem.separator)}",
             null)
 
+    override fun toString() = toUri().toString()
+
     override fun subpath(beginIndex: Int, endIndex: Int): Path =
             InnerPath(innerFs, pathSegments.subList(beginIndex, endIndex))
 

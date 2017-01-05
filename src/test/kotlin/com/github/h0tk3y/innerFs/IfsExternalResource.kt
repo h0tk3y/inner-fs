@@ -5,6 +5,7 @@ import org.junit.jupiter.api.extension.BeforeEachCallback
 import org.junit.jupiter.api.extension.TestExtensionContext
 import java.nio.file.Files
 import java.nio.file.Paths
+import java.util.*
 import kotlin.reflect.KMutableProperty
 import kotlin.reflect.memberProperties
 
@@ -12,21 +13,16 @@ import kotlin.reflect.memberProperties
  * Created by igushs on 1/2/17.
  */
 
-@Target(AnnotationTarget.PROPERTY)
-@Retention(AnnotationRetention.RUNTIME)
-internal annotation class InjectIfs
-
 internal class IfsExternalResource : BeforeEachCallback, AfterEachCallback {
     private fun ifsProperties(context: TestExtensionContext) = context.testInstance.javaClass.kotlin.memberProperties
             .filterIsInstance<KMutableProperty<*>>()
-            .filter { it.annotations.any { it is InjectIfs } && it.returnType.classifier == InnerFileSystem::class }
+            .filter { it.isLateinit && it.returnType.classifier == InnerFileSystem::class }
             .filterIsInstance<KMutableProperty<*>>()
 
+    val random = Random()
 
     override fun beforeEach(context: TestExtensionContext) = ifsProperties(context).forEach {
-        val file = Files.createTempFile(Paths.get("."), "innerFs", ".ifs")
-        Files.delete(file)
-        val ifs = InnerFileSystemProvider().newFileSystem(file, emptyMap<String, Unit>())
+        val ifs = InnerFileSystemProvider().newFileSystem(Paths.get("./test-inner-fs-${random.nextLong()}.ifs"))
         it.setter.call(context.testInstance, ifs)
     }
 

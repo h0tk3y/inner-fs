@@ -25,6 +25,7 @@ internal class FileDescriptor(val innerFs: InnerFileSystem,
             }
     }
 
+    val blockLocator = BlockLocator(initialBlockLocation = fileLocation) { BlockHeader.read(innerFs.readBlock(it)) }
 
     var size: Long
         get() = directoryEntry.entry.size

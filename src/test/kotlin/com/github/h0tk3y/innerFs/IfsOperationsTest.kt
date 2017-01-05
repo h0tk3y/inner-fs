@@ -8,7 +8,6 @@ import org.junit.jupiter.api.extension.ExtendWith
 @ExtendWith(IfsExternalResource::class)
 class IfsOperationsTest {
 
-    @InjectIfs
     lateinit var ifs: InnerFileSystem
 
     @Test fun testHasUnallocatedEntry() {

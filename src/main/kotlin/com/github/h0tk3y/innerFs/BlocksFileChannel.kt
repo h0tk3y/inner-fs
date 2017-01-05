@@ -5,6 +5,7 @@ import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.MappedByteBuffer
 import java.nio.channels.*
+import java.util.concurrent.atomic.AtomicLong
 
 internal class BlocksFileChannel(val fileDescriptor: FileDescriptor,
                                  val readable: Boolean,
@@ -43,10 +44,6 @@ internal class BlocksFileChannel(val fileDescriptor: FileDescriptor,
         if (!writable) throw NonWritableChannelException()
     }
 
-    private val blockLocator = BlockLocator(initialBlockLocation = firstBlockLocation) {
-        BlockHeader.read(innerFs.readBlock(it))
-    }
-
     private fun updateSize(newSize: Long) {
         if (newSize > fileDescriptor.size) {
             fileDescriptor.size = newSize
@@ -56,18 +53,18 @@ internal class BlocksFileChannel(val fileDescriptor: FileDescriptor,
         }
     }
 
-    @Volatile
-    private var currentPosition: Long = 0L
+    // Atomic to make position changes from multiple readers thread-safe
+    private val currentPosition: AtomicLong = AtomicLong(0L)
 
     private fun ensureLocation(offset: Long): Long {
         require(offset >= 0) { "Position in file should be non-negative" }
         var result: Long?
         do { // find a location to write or ensure the file length
-            result = blockLocator.locate(offset)
+            result = fileDescriptor.blockLocator.locate(offset)
             if (result == null)
                 innerFs.allocateBlock(initializeDataBlock).apply {
-                    innerFs.setBlockAsNext(blockLocator.lastBlockLocation, this)
-                    blockLocator.appendBlock(this)
+                    innerFs.setBlockAsNext(fileDescriptor.blockLocator.lastBlockLocation, this)
+                    fileDescriptor.blockLocator.appendBlock(this)
                 }
         } while (result == null)
         return result
@@ -81,7 +78,7 @@ internal class BlocksFileChannel(val fileDescriptor: FileDescriptor,
             val position = targetInFile + buffer.position()
             val location = ensureLocation(position)
             val bytesToWrite = Math.min(buffer.remaining(),
-                                        blockLocator.remainingBytesInBlock(position))
+                                        fileDescriptor.blockLocator.remainingBytesInBlock(position))
             if (bytesToWrite == 0) {
                 src.position(src.position() + buffer.position())
                 return buffer.position()
@@ -105,8 +102,8 @@ internal class BlocksFileChannel(val fileDescriptor: FileDescriptor,
         fileDescriptor.critical(writeLevel(src.remaining())) {
             if (append)
                 position(fileDescriptor.size)
-            val result = writeBuffer(src, currentPosition)
-            currentPosition += result
+            val result = writeBuffer(src, currentPosition.get())
+            currentPosition.getAndAdd(result.toLong())
             return result
         }
     }
@@ -139,13 +136,13 @@ internal class BlocksFileChannel(val fileDescriptor: FileDescriptor,
 
     override fun position(): Long {
         checkNotClosed()
-        return currentPosition
+        return currentPosition.get()
     }
 
     @Synchronized
     override fun position(newPosition: Long): FileChannel {
         checkNotClosed()
-        currentPosition = newPosition
+        currentPosition.set(newPosition)
         return this
     }
 
@@ -167,18 +164,22 @@ internal class BlocksFileChannel(val fileDescriptor: FileDescriptor,
         val buffer = dst.slice()
         while (buffer.hasRemaining()) { // an iteration of this loop performs writes only within a single block
             val position = sourceInFile + buffer.position()
-            val location = blockLocator.locate(position)!!
+            val location = fileDescriptor.blockLocator.locate(position)!!
             val bytesToRead = buffer.remaining()
-                    .coerceAtMost(blockLocator.remainingBytesInBlock(position))
+                    .coerceAtMost(fileDescriptor.blockLocator.remainingBytesInBlock(position))
                     .coerceAtMost((fileDescriptor.size - position).coerceAtMost(BLOCK_SIZE.toLong()).toInt()) //avoid overflow
-            if (bytesToRead == 0) {
+            if (bytesToRead <= 0) {
                 dst.position(dst.position() + buffer.position())
                 return buffer.position()
             }
             val blockBuffer = buffer.slice().limit(bytesToRead) as ByteBuffer
             try {
-                while (blockBuffer.hasRemaining()) {
-                    innerFs.underlyingChannel.read(blockBuffer, location + blockBuffer.position())
+                try {
+                    while (blockBuffer.hasRemaining()) {
+                        innerFs.underlyingChannel.read(blockBuffer, location + blockBuffer.position())
+                    }
+                } catch (e: IOException) {
+                    throw IOException("Could not read from this file channel. Reason: $e", e)
                 }
             } catch (e: IOException) {
                 throw IOException("Could not write to this file channel. Reason: $e", e)
@@ -191,9 +192,9 @@ internal class BlocksFileChannel(val fileDescriptor: FileDescriptor,
 
     override fun read(dst: ByteBuffer): Int {
         fileDescriptor.critical(READ) {
-            val result = readBuffer(dst, currentPosition)
-            currentPosition += result
-            return if (result == 0 && currentPosition == size()) -1 else result
+            val result = readBuffer(dst, currentPosition.get())
+            val newPosition = currentPosition.addAndGet(result.toLong())
+            return if (result == 0 && newPosition == size()) -1 else result
         }
     }
 

@@ -2,6 +2,7 @@ package com.github.h0tk3y.innerFs
 import sun.nio.fs.DefaultFileSystemProvider
 import java.io.IOException
 import java.net.URI
+import java.nio.channels.FileChannel
 import java.nio.channels.SeekableByteChannel
 import java.nio.file.*
 import java.nio.file.attribute.*
@@ -11,9 +12,11 @@ import java.nio.file.spi.FileSystemProvider
  * Created by igushs on 12/21/16.
  */
 
+
 private val createdFileSystems = mutableMapOf<Path, InnerFileSystem>()
 
-class InnerFileSystemProvider constructor() : FileSystemProvider() {
+class InnerFileSystemProvider : FileSystemProvider() {
+
     //region Java NIO SPI
 
     override fun checkAccess(path: Path, vararg modes: AccessMode?) {
@@ -86,7 +89,7 @@ class InnerFileSystemProvider constructor() : FileSystemProvider() {
                         p.innerFs.addEntryToDirectory(pParentBlock, resultEntry)
                     }
                     if (s.innerFs.fileDescriptorByBlock.containsKey(sEntry.firstBlockLocation))
-                        throw FileSystemException("$s", null, "File cannot be moved because it is in use")
+                        throw FileIsInUseException(s, "Cannot move the file")
                     s.innerFs.markEntryDeleted(sParentBlock, sLocation)
                 }
             } else {
@@ -103,27 +106,6 @@ class InnerFileSystemProvider constructor() : FileSystemProvider() {
                     }
                 }
             }
-        }
-    }
-
-    private inline fun directoriesOperation(s: InnerPath, p: InnerPath, atomic: Boolean, actions: () -> Unit) {
-        if (atomic) {
-            val sParent = requireInnerFsPath(s.parent?.normalize())
-            val pParent = requireInnerFsPath(p.parent?.normalize())
-            val sParentBlock = s.innerFs.locateBlock(sParent) ?: throw NoSuchFileException("$sParent")
-            val pParentBlock = p.innerFs.locateBlock(pParent) ?: throw NoSuchFileException("$pParent")
-            // To maintain the globally ordered locking, check if one of the paths is an ancestor of the other
-            val outer = if (sParent.startsWith(pParent)) sParentBlock else pParentBlock
-            val outerFs = if (outer == sParentBlock) s.innerFs else p.innerFs
-            val inner = if (outer == sParentBlock) pParentBlock else sParentBlock
-            val innerFs = if (outerFs == s.innerFs) p.innerFs else s.innerFs
-            outerFs.criticalForBlock(outer, write = true) {
-                innerFs.criticalForBlock(inner, write = true) {
-                    actions()
-                }
-            }
-        } else {
-            actions()
         }
     }
 
@@ -168,21 +150,36 @@ class InnerFileSystemProvider constructor() : FileSystemProvider() {
         return false
     }
 
+    fun newFileSystem(uri: URI?) = newFileSystem(uri, emptyMap<String, Any>())
     override fun newFileSystem(uri: URI?, env: Map<String, *>?) = newFileSystem(DefaultFileSystemProvider.create().getPath(uri), env)
 
+    fun newFileSystem(path: Path) = newFileSystem(path, emptyMap<String, Any>())
     override fun newFileSystem(path: Path, env: Map<String, *>?): InnerFileSystem {
-        require(path.fileSystem == FileSystems.getDefault()) {
-            "A path from the default file system provider is required."
-        }
         synchronized(createdFileSystems) {
             val normalizedAbsolutePath = path.toAbsolutePath().normalize()
             val existingFs = createdFileSystems[normalizedAbsolutePath]
             if (existingFs != null && existingFs.isOpen)
                 throw FileSystemAlreadyExistsException()
 
-            val fs = InnerFileSystem(normalizedAbsolutePath, this, !Files.exists(path))
-            createdFileSystems[path.toRealPath()] = fs
+            val fs = InnerFileSystem(normalizedAbsolutePath, !Files.exists(path))
+            createdFileSystems[normalizedAbsolutePath] = fs
             return fs
+        }
+    }
+
+    override fun getFileSystem(uri: URI?): InnerFileSystem? =
+            synchronized(createdFileSystems) {
+                val path = Paths.get(uri)?.toAbsolutePath()?.normalize() ?: return@synchronized null
+                createdFileSystems[path] ?: throw FileSystemNotFoundException()
+            }
+
+    fun getOrCreateFileSystem(path: Path): InnerFileSystem {
+        synchronized(createdFileSystems) {
+            return try {
+                getFileSystem(path.toUri())
+            } catch (_: FileSystemNotFoundException) {
+                null
+            } ?: newFileSystem(path, emptyMap<String, Any>())
         }
     }
 
@@ -222,30 +219,41 @@ class InnerFileSystemProvider constructor() : FileSystemProvider() {
         }
     }
 
-    override fun newByteChannel(path: Path?, options: MutableSet<out OpenOption>, vararg attrs: FileAttribute<*>?): SeekableByteChannel {
+    override fun newByteChannel(path: Path?,
+                                options: MutableSet<out OpenOption>,
+                                vararg attrs: FileAttribute<*>?): SeekableByteChannel =
+            newFileChannel(path, options, *attrs)
+
+    override fun newFileChannel(path: Path?, options: MutableSet<out OpenOption>, vararg attrs: FileAttribute<*>?): FileChannel {
         if (attrs.isNotEmpty()) throw UnsupportedOperationException("File attributes are not supported.")
 
-        var read = false
         var write = false
         var append = false
         var create = false
         var createNew = false
+        var truncateExisting = false
 
         for (o in options) when (o) {
-            StandardOpenOption.READ -> read = true
+            StandardOpenOption.READ -> Unit
             StandardOpenOption.WRITE -> write = true
             StandardOpenOption.APPEND -> append = true
             StandardOpenOption.CREATE -> create = true
             StandardOpenOption.CREATE_NEW -> createNew = true
+            StandardOpenOption.TRUNCATE_EXISTING -> truncateExisting = true
             else -> throw UnsupportedOperationException("Option $o is not supported.")
         }
 
         val p = requireInnerFsPath(path)
-        return p.innerFs.openFile(p, read, write, append, create = when {
-            createNew -> InnerFileSystem.CreateMode.CREATE_OR_FAIL
-            create -> InnerFileSystem.CreateMode.CREATE_OR_OPEN
-            else -> InnerFileSystem.CreateMode.OPEN_OR_FAIL
-        })
+        return p.innerFs.openFile(path = p,
+                                  read = true, // this is because of some methods in NIO relying on default readability
+                                  write = write,
+                                  append = append,
+                                  truncateExisting = truncateExisting && write,
+                                  create = when {
+                                      createNew -> InnerFileSystem.CreateMode.CREATE_OR_FAIL
+                                      create -> InnerFileSystem.CreateMode.CREATE_OR_OPEN
+                                      else -> InnerFileSystem.CreateMode.OPEN_OR_FAIL
+                                  })
     }
 
     override fun delete(path: Path?) {
@@ -263,20 +271,17 @@ class InnerFileSystemProvider constructor() : FileSystemProvider() {
     override fun readAttributes(path: Path?, attributes: String?, vararg options: LinkOption?) =
             throw UnsupportedOperationException()
 
-    override fun getFileSystem(uri: URI?): InnerFileSystem? =
-            synchronized(createdFileSystems) {
-                val path = Paths.get(uri)?.toAbsolutePath()?.normalize() ?: return@synchronized null
-                createdFileSystems[path.toRealPath()]
-            }
-
     override fun getPath(uri: URI?): Path? {
         requireNotNull(uri)
         val schemeSpecificPart = uri!!.schemeSpecificPart
-        val fsPath = schemeSpecificPart.substringBefore("!/")
+        val fsPath = schemeSpecificPart.substringBeforeLast("!/")
         if (fsPath == schemeSpecificPart)
             throw IllegalAccessException("The URI '$uri' is malformed. Correct URI: '$scheme:file:/c:/foo.ifs!/bar'.")
-        val fs = getFileSystem(uri) ?: newFileSystem(Paths.get(fsPath), emptyMap<String, Unit>())
-        return fs.getPath(schemeSpecificPart.substringAfter("!/"))
+        val fs = synchronized(createdFileSystems) {
+            getFileSystem(URI.create(fsPath)) ?:
+            newFileSystem(Paths.get(fsPath), emptyMap<String, Unit>())
+        }
+        return fs.getPath(schemeSpecificPart.substringAfterLast("!"))
     }
 
     override fun getFileStore(path: Path?): FileStore {
@@ -292,4 +297,31 @@ class InnerFileSystemProvider constructor() : FileSystemProvider() {
         p.innerFs.createDirectory(p)
     }
 //endregion Java NIO SPI
+
+    private inline fun directoriesOperation(s: InnerPath, p: InnerPath, atomic: Boolean, actions: () -> Unit) {
+        if (atomic) {
+            val sParent = requireInnerFsPath(s.parent?.normalize())
+            val pParent = requireInnerFsPath(p.parent?.normalize())
+            val sParentBlock = s.innerFs.locateBlock(sParent) ?: throw NoSuchFileException("$sParent")
+            val pParentBlock = p.innerFs.locateBlock(pParent) ?: throw NoSuchFileException("$pParent")
+            // To maintain the globally ordered locking, check if one of the paths is an ancestor of the other
+            val outer = if (sParent.startsWith(pParent)) sParentBlock else pParentBlock
+            val outerFs = if (outer == sParentBlock) s.innerFs else p.innerFs
+            val inner = if (outer == sParentBlock) pParentBlock else sParentBlock
+            val innerFs = if (outerFs == s.innerFs) p.innerFs else s.innerFs
+            outerFs.criticalForBlock(outer, write = true) {
+                innerFs.criticalForBlock(inner, write = true) {
+                    actions()
+                }
+            }
+        } else {
+            actions()
+        }
+    }
+
+    override fun equals(other: Any?): Boolean {
+        return other is InnerFileSystemProvider
+    }
+
+    override fun hashCode(): Int = javaClass.hashCode()
 }

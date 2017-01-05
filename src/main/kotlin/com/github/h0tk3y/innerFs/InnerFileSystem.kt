@@ -336,20 +336,20 @@ class InnerFileSystem(val underlyingPath: Path,
         require(path != path.root) { "Root file '/' cannot be deleted" }
         val parent = path.normalize().parent!!
         locateBlock(parent, write = true) { parentLocation ->
-            synchronized(openFileDescriptors) {
                 locateEntry(path.fileName, true, parentLocation) { (location, entry) ->
-                    criticalForBlock(entry.firstBlockLocation, write = true) {
-                        if (entry.isDirectory) {
-                            val hasEntries = entriesFromBlocksAt(entry.firstBlockLocation).any { (_, v) -> v.exists }
-                            if (hasEntries)
-                                throw DirectoryNotEmptyException("$path")
-                        }
+                    criticalForBlock(entry.firstBlockLocation, false) {
+                        synchronized(openFileDescriptors) {
+                            if (entry.isDirectory) {
+                                val hasEntries = entriesFromBlocksAt(entry.firstBlockLocation).any { (_, v) -> v.exists }
+                                if (hasEntries)
+                                    throw DirectoryNotEmptyException("$path")
+                            }
 
-                        if (fileDescriptorByBlock.containsKey(entry.firstBlockLocation))
-                            throw FileIsInUseException(path, "Cannot delete the file")
-                        blocksSequence(entry.firstBlockLocation).forEach { (location, _) -> deallocateBlock(location) }
-                        markEntryDeleted(parentLocation, location)
-                    }
+                            if (fileDescriptorByBlock.containsKey(entry.firstBlockLocation))
+                                throw FileIsInUseException(path, "Cannot delete the file")
+                            blocksSequence(entry.firstBlockLocation).forEach { (location, _) -> deallocateBlock(location) }
+                            markEntryDeleted(parentLocation, location)
+                        }
                 } ?: throw NoSuchFileException("'$path'")
             }
         } ?: throw NoSuchFileException("$parent", null, "Parent directory '$parent' not found for path '$path'")

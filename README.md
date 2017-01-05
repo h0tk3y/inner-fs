@@ -72,8 +72,32 @@ from an instance of `InnerFileSystemProvider` or even through `Paths.get(...)`. 
 
 ## Thread safety
 
-(there is some, but this section is to be written)
+The approach to safe concurrent operations that InnerFS takes is separate locks for blocks corresponding to the file system objects. For simplicity, only the first block of a file or a directory is locked, that is, such a block represents the whole file or directory. The operations lock the blocks either for *read* or for *write* with the well-known semantics (reads are done concurrently with other reads; writes lock the resource exclusively). Here are some statements about the locks:
 
+* `FileChannel` read operations take only *read* lock of the file.
+* `FileChannel` write operations take the *write* lock of the file and, if its size can change during the operation, the file's parent directory *write* lock.
+* `allocateBlock` and `deallocateBlock` internal operations take *write* lock of the special `UNALLOCATED_BLOCKS` block, not the root block. This is done to avoid the lock ordering interference (see below) with the other operations.
+* `openFile` (which creates files as well) takes *write* lock of the parent directory.
+* `deleteFile` takes *write* locks of both parent directory and the file itself. Also, deleting and opening/creating files are atomic operations with respect to each other.
+* locating a path is not atomic on the whole, but each of the steps into the directories along the path is; a deleted file will never be located: a locating step and deleting the file both take the locks on the parent directory, and, what's equally important, a non-empty directory cannot be deleted. However, renaming or moving a directory can interfere with the locating operation, in this case it can end up finding a file by its old path.
+* `move` operation with `ATOMIC_MOVE` option first take the two *write* locks of the source and target parent directories and then performs the move, so that no other operation can be performed which involve the two parent directories.
+
+To avoid deadlocks, InnerFS uses locks ordering. The order is, as follows:
+
+* If block *a* represents a parent or an ancestor directory of file system entry *b*, then *a* cannot be locked while *b* is already locked. The relation *'represents a parent or an ancestor'* can change for two blocks *a* and *b* over time, but this can only happen if one of them is deallocated and then allocated again. This cannot happen inside a single lock on both of the blocks.
+
+* After `UNALLOCATED_BLOCKS` is locked, no lock for any other file system object can be taken until `UNALLOCATED_BLOCK` is unlocked.
+
+A simplified locks ordering hierarchy for a file system with items `root { a { c, d }, d }`:
+
+              root
+             /    \ 
+            a      b
+           / \     |
+          c   d    |
+          |   |    |
+       UNALLOCATED_BLOCKS
+      
 ## DSL
 
 As many things in Kotlin, InnerFS comes with a DSL. It consists of two parts:

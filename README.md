@@ -1,5 +1,5 @@
-# inner-fs
-A basic implementation of an in-file file system with Java NIO file system interface in Kotlin
+# InnerFS
+A basic implementation of an in-file file system with Java NIO file system interface in Kotlin. **Work in progress**
 
 ## Design
 
@@ -57,7 +57,7 @@ The URIs of InnerFS paths have the following form:
 
     ifs:[underlying URI]!/some/path/inside/ifs
     
-where `[underlying URI]` is the URI of the underlying file, e.g. `file:///C/myFileSystem.ifs`.
+where `[underlying URI]` is the URI of the underlying file, e.g. `file:///C:/myFileSystem.ifs`.
 
 The InnerFS file system provider is [installed as a service](https://docs.oracle.com/javase/7/docs/api/java/nio/file/FileSystems.html), 
 and the instances of InnerFS can be obtained through `FileSystems.newFileSystem(uri, map)` and `FileSystems.getFileSystem(uri)` as well as
@@ -104,7 +104,7 @@ As many things in Kotlin, InnerFS comes with a DSL. It consists of two parts:
 
 * declarative builder of a new InnerFS:
 
-        val fileForLaterUse: Path? = null
+        var fileForLaterUse: Path? = null
         
         val ifs = innerFs("./test-inner-fs-${Random().nextLong()}.ifs") { // initializer for the whole file system
             directory("a") { // initializer for this directory

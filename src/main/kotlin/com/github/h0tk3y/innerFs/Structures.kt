@@ -50,9 +50,7 @@ internal data class DirectoryEntry(
     internal val isFreeBlocksEntry get() = firstBlockLocation < 0
 
     init {
-        require(nameBytes.size <= MAX_NAME_SIZE) { //todo use NameChecker
-            "An entry name should fit into $MAX_NAME_SIZE bytes in UTF-8."
-        }
+        require(NameChecker.isValidName(name))
     }
 
     override fun writeTo(buffer: ByteBuffer) {

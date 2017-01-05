@@ -130,8 +130,7 @@ internal class BlocksFileChannel(val fileDescriptor: FileDescriptor,
     }
 
     override fun truncate(size: Long): FileChannel {
-        //todo decide if we need it
-        TODO()
+        throw UnsupportedOperationException("Truncating an open file is not supported. Use open option TRUNCATE_EXISTING.")
     }
 
     override fun position(): Long {

@@ -74,20 +74,20 @@ class InnerFileSystemProvider : FileSystemProvider() {
 
         directoriesOperation(s, p, atomicMove) {
             if (s.innerFs == p.innerFs) {
+                val (sLocation, sEntry) = s.innerFs.locateEntry(s) ?: throw NoSuchFileException("$s")
+                val sParentBlock = s.innerFs.locateBlock(requireInnerFsPath(s.parent)) ?: throw NoSuchFileException("${s.parent}")
+                val pParentBlock = p.innerFs.locateBlock(requireInnerFsPath(p.parent)) ?: throw NoSuchFileException("${p.parent}")
+                val resultEntry = sEntry.copy(name = p.fileNameString)
+                val locatedPEntry = p.innerFs.locateEntry(p)
+                if (locatedPEntry != null) {
+                    if (StandardCopyOption.REPLACE_EXISTING !in options)
+                        throw FileAlreadyExistsException("$p")
+                    p.innerFs.deleteFile(p)
+                    p.innerFs.rewriteEntry(pParentBlock, locatedPEntry.location, resultEntry)
+                } else {
+                    p.innerFs.addEntryToDirectory(pParentBlock, resultEntry)
+                }
                 synchronized(p.innerFs.openFileDescriptors) {
-                    val (sLocation, sEntry) = s.innerFs.locateEntry(s) ?: throw NoSuchFileException("$s")
-                    val sParentBlock = s.innerFs.locateBlock(requireInnerFsPath(s.parent)) ?: throw NoSuchFileException("${s.parent}")
-                    val pParentBlock = p.innerFs.locateBlock(requireInnerFsPath(p.parent)) ?: throw NoSuchFileException("${p.parent}")
-                    val resultEntry = sEntry.copy(name = p.fileNameString)
-                    val locatedPEntry = p.innerFs.locateEntry(p)
-                    if (locatedPEntry != null) {
-                        if (StandardCopyOption.REPLACE_EXISTING !in options)
-                            throw FileAlreadyExistsException("$p")
-                        p.innerFs.deleteFile(p)
-                        p.innerFs.rewriteEntry(pParentBlock, locatedPEntry.location, resultEntry)
-                    } else {
-                        p.innerFs.addEntryToDirectory(pParentBlock, resultEntry)
-                    }
                     if (s.innerFs.fileDescriptorByBlock.containsKey(sEntry.firstBlockLocation))
                         throw FileIsInUseException(s, "Cannot move the file")
                     s.innerFs.markEntryDeleted(sParentBlock, sLocation)
@@ -121,10 +121,10 @@ class InnerFileSystemProvider : FileSystemProvider() {
                 override fun isDirectory() = e.isDirectory
                 override fun isSymbolicLink() = false
                 override fun isRegularFile() = true
-                override fun creationTime() = FileTime.fromMillis(0L) //todo maybe add time
+                override fun creationTime() = FileTime.fromMillis(0L)
                 override fun size() = e.size
                 override fun fileKey() = null
-                override fun lastModifiedTime() = FileTime.fromMillis(0L) //todo maybe add time
+                override fun lastModifiedTime() = FileTime.fromMillis(0L)
                 override fun lastAccessTime() = FileTime.fromMillis(0L)
             }
 

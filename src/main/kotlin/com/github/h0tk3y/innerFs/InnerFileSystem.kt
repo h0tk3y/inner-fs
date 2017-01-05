@@ -24,6 +24,11 @@ class InnerFileSystem(val underlyingPath: Path,
 
     private val writable: Boolean
 
+    private fun checkWritable() {
+        if (!writable)
+            throw FileSystemException("This file system is not writable")
+    }
+
     internal val underlyingChannel: FileChannel
 
     private val blockLocksMap = ConcurrentHashMap<Long, ReadWriteLock>()
@@ -68,7 +73,7 @@ class InnerFileSystem(val underlyingPath: Path,
 
     override fun supportedFileAttributeViews(): Set<String> = setOf("basic")
 
-    override fun isReadOnly(): Boolean = false
+    override fun isReadOnly(): Boolean = !writable
 
     override fun getFileStores(): Iterable<FileStore> = listOf(singleFileStore)
 
@@ -138,6 +143,7 @@ class InnerFileSystem(val underlyingPath: Path,
     }
 
     private fun writeOut(buffer: ByteBuffer, toLocation: Long) {
+        checkWritable()
         val b = buffer.slice()
         while (b.hasRemaining()) {
             underlyingChannel.write(b, toLocation + b.position())
@@ -215,13 +221,6 @@ class InnerFileSystem(val underlyingPath: Path,
 
     internal fun entriesFromBlocksAt(firstBlockLocation: Long) = entriesFromBlocks(blocksSequence(firstBlockLocation))
 
-    internal fun singleEntryFromLocation(location: Long): Located<DirectoryEntry> {
-        val bytes = ByteBuffer.allocateDirect(DirectoryEntry.size)
-        while (bytes.hasRemaining())
-            underlyingChannel.read(bytes)
-        return Located(location, DirectoryEntry.read(bytes))
-    }
-
     internal fun rewriteEntry(
             directoryLocation: Long,
             entryLocation: Long,
@@ -264,6 +263,7 @@ class InnerFileSystem(val underlyingPath: Path,
 
     /** Allocates a free block, initializes its data part with [initData] function and returns its start location.*/
     internal fun allocateBlock(initData: (dataBuffer: ByteBuffer) -> Unit): Long {
+        checkWritable()
         criticalForBlock(UNALLOCATED_BLOCKS, write = true) {
             val freeBlocks = getFreeBlocks()
 
@@ -293,6 +293,7 @@ class InnerFileSystem(val underlyingPath: Path,
     }
 
     internal fun addEntryToDirectory(directoryFirstBlockLocation: Long, newEntry: DirectoryEntry): Located<DirectoryEntry> {
+        checkWritable()
         criticalForBlock(directoryFirstBlockLocation, write = true) {
             val blocksSequence = blocksSequence(directoryFirstBlockLocation)
             val existingEmptySlot = entriesFromBlocks(blocksSequence).find { !it.entry.exists && !it.entry.isFreeBlocksEntry }
@@ -310,6 +311,7 @@ class InnerFileSystem(val underlyingPath: Path,
 
     //Should be called with a write lock taken on the target file
     internal fun setBlockAsNext(lastBlockLocation: Long, nextBlockLocation: Long) {
+        checkWritable()
         val newHeader = BlockHeader(nextBlockLocation = nextBlockLocation)
         underlyingChannel.write(newHeader.bytes(), lastBlockLocation)
     }
@@ -332,6 +334,7 @@ class InnerFileSystem(val underlyingPath: Path,
     }
 
     fun deleteFile(path: InnerPath) {
+        checkWritable()
         require(path.innerFs == this) { "The path '$path' doesn't belong to this file system" }
         require(path.isAbsolute) { "The path should be absolute." }
         require(path != path.root) { "Root file '/' cannot be deleted" }
@@ -363,6 +366,9 @@ class InnerFileSystem(val underlyingPath: Path,
                  append: Boolean = false,
                  truncateExisting: Boolean = false,
                  create: CreateMode = CREATE_OR_OPEN): FileChannel {
+        if (write || truncateExisting)
+            checkWritable()
+
         require(path.innerFs == this) { "The path '$path' doesn't belong to this file system" }
         require(path.isAbsolute) { "The path should be absolute." }
         val parent = path.normalize().parent!!
@@ -389,7 +395,6 @@ class InnerFileSystem(val underlyingPath: Path,
                         FileDescriptor(this, parentLocation, actualEntry)
                     }
                     fd.openOneFile()
-
                     if (create == CREATE_OR_FAIL)
                         throw FileAlreadyExistsException("File '$path' already exists.")
                     return BlocksFileChannel(fd, read, write, append)
@@ -415,6 +420,8 @@ class InnerFileSystem(val underlyingPath: Path,
     }
 
     fun createDirectory(path: InnerPath) {
+        checkWritable()
+
         require(path.isAbsolute)
         require(path != path.root)
 

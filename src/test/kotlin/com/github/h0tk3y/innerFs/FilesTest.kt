@@ -121,4 +121,10 @@ class FilesTest {
         g.close()
         assertEquals(123, Files.size(ifs.getPath("/a.txt")))
     }
+
+    @Test fun hidden() {
+        val f = ifs.getPath("/.nomedia")
+        Files.createFile(f)
+        Files.isHidden(f)
+    }
 }

@@ -305,7 +305,13 @@ class InnerFileSystemProvider : FileSystemProvider() {
             val sParentBlock = s.innerFs.locateBlock(sParent) ?: throw NoSuchFileException("$sParent")
             val pParentBlock = p.innerFs.locateBlock(pParent) ?: throw NoSuchFileException("$pParent")
             // To maintain the globally ordered locking, check if one of the paths is an ancestor of the other
-            val outer = if (sParent.startsWith(pParent)) sParentBlock else pParentBlock
+            // and if not, lock the block which has lower number first
+            val outer = when {
+                sParent.startsWith(pParent) -> sParentBlock
+                pParent.startsWith(sParent) -> pParentBlock
+                sParentBlock < pParentBlock -> sParentBlock
+                else -> pParentBlock
+            }
             val outerFs = if (outer == sParentBlock) s.innerFs else p.innerFs
             val inner = if (outer == sParentBlock) pParentBlock else sParentBlock
             val innerFs = if (outerFs == s.innerFs) p.innerFs else s.innerFs

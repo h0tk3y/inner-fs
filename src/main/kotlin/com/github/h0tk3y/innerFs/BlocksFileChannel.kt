@@ -174,12 +174,8 @@ internal class BlocksFileChannel(val fileDescriptor: FileDescriptor,
             }
             val blockBuffer = buffer.slice().limit(bytesToRead) as ByteBuffer
             try {
-                try {
-                    while (blockBuffer.hasRemaining()) {
-                        innerFs.underlyingChannel.read(blockBuffer, location + blockBuffer.position())
-                    }
-                } catch (e: IOException) {
-                    throw IOException("Could not read from this file channel. Reason: $e", e)
+                while (blockBuffer.hasRemaining()) {
+                    innerFs.underlyingChannel.read(blockBuffer, location + blockBuffer.position())
                 }
             } catch (e: IOException) {
                 throw IOException("Could not write to this file channel. Reason: $e", e)

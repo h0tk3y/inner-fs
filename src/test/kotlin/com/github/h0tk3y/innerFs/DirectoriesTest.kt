@@ -74,4 +74,18 @@ class DirectoriesTest {
         val files3 = Files.newDirectoryStream(directory).map { (it as InnerPath).fileNameString }.toSet()
         assertEquals((1..nItems).map { if (it % 2 == 0) "$it - new" else "$it" }.toSet(), files3)
     }
+
+    @Test fun moveToTheSamePath() {
+        Files.createDirectories(ifs.getPath("/a/b/c"))
+        val file = Files.createFile(ifs.getPath("/a/b/c/1.txt"))
+        Files.move(file, file)
+        assertTrue(Files.exists(file))
+    }
+
+    @Test fun copyToTheSamePath() {
+        Files.createDirectories(ifs.getPath("/a/b/c"))
+        val file = Files.createFile(ifs.getPath("/a/b/c/1.txt"))
+        Files.copy(file, file)
+        assertTrue(Files.exists(file))
+    }
 }

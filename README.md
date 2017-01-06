@@ -82,28 +82,39 @@ The approach to safe concurrent operations that InnerFS takes is separate locks 
 * locating a path is not atomic on the whole, but each of the steps into the directories along the path is; a deleted file will never be located: a locating step and deleting the file both take the locks on the parent directory, and, what's equally important, a non-empty directory cannot be deleted. However, renaming or moving a directory can interfere with the locating operation, in this case it can end up finding a file by its old path.
 * `move` operation with `ATOMIC_MOVE` option first take the two *write* locks of the source and target parent directories and then performs the move, so that no other operation can be performed which involve the two parent directories.
 
-To avoid deadlocks, InnerFS uses locks ordering. The order is, as follows:
+To avoid deadlocks, InnerFS uses locks ordering. The imposed order is based on the paths comparing. The paths are 
+compared lexicographically as lists of *path segments*, for example, `/abc/def` < `/abc/def/ghi`, and `/abc/def` < `/abc/xyz`.
+This implies that
 
-* If block *a* represents a parent or an ancestor directory of file system entry *b*, then *a* cannot be locked while *b* is already locked. The relation *'represents a parent or an ancestor'* can change for two blocks *a* and *b* over time, but this can only happen if one of them is deallocated and then allocated again. This cannot happen inside a single lock on both of the blocks.
+* If block *a* represents a parent or an ancestor directory of file system entry *b*, then *a* cannot be locked while 
+*b* is already locked. The relation *'represents a parent or an ancestor'* can change for two blocks *a* and *b* over 
+time, but this can only happen if one of them is deallocated and then allocated again. This cannot happen inside a 
+single lock on both of the blocks.
 
-* In case neither of blocks *a* and *b* represents the other's parent or ancestor, consider *aPath* and *bPath* the paths that
- lead to the blocks *a* and *b* respectively. If `aPath < bPath` (lexicographically) then if *b* is blocked, *a* should not
- be blocked until *b* is unlocked.
+* In case neither of blocks *a* and *b* represents the other's parent or ancestor, consider *aPath* and *bPath* the 
+paths that lead to the blocks *a* and *b* respectively. If `aPath < bPath` (lexicographically) then if *b* is blocked, 
+*a* should not be blocked until *b* is unlocked.
 
 * After `UNALLOCATED_BLOCKS` is locked, no lock for any other file system object can be taken until `UNALLOCATED_BLOCK` is unlocked.
 
-A simplified locks ordering hierarchy for a file system, assuming that `a < b < c < d`:
+* A lock for `openFileDescriptors` cannot be locked if `UNALLOCATED_BLOCKS` lock is taken, and while `openFileDescriptor`
+ is locked, only the `UNALLOCATED_BLOCKS` lock can be taken, but no other locks.
+
+An example locks ordering hierarchy for a file system (the arrows that come from the ordering transitivity are omitted):
 
               root
              /    \
             v      v
             a ---> b 
-          /   \  /  |
-         v     v    |
-         c --> d    |
+           / \    ^ |
+          v   v   | |
+         c --> d -+ |
          |     |    |
          v     v    v
-       UNALLOCATED_BLOCKS
+      openFileDescriptors
+               |
+               v
+      UNALLOCATED_BLOCKS
       
 ## DSL
 

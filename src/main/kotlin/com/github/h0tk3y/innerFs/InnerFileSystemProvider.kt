@@ -1,6 +1,5 @@
 package com.github.h0tk3y.innerFs
 import sun.nio.fs.DefaultFileSystemProvider
-import java.io.IOException
 import java.net.URI
 import java.nio.channels.FileChannel
 import java.nio.channels.SeekableByteChannel
@@ -31,34 +30,18 @@ class InnerFileSystemProvider : FileSystemProvider() {
     override fun copy(source: Path?, target: Path?, vararg options: CopyOption?) {
         val s = requireInnerFsPath(source?.normalize())
         val p = requireInnerFsPath(target?.normalize())
-        require(p.isAbsolute)
-        require(s.isAbsolute)
 
-        if (Files.isSameFile(source, target))
-            return
-
-        directoriesOperation(s, p, false) {
-            if (Files.isDirectory(s)) {
-                Files.createDirectory(p)
-            } else {
-                s.innerFs.openFile(s, read = true, create = InnerFileSystem.CreateMode.OPEN_OR_FAIL).use { sFile ->
-                    if (Files.exists(p))
-                        if (StandardCopyOption.REPLACE_EXISTING !in options)
-                            throw FileAlreadyExistsException("$p") else
-                            Files.delete(p)
-                    p.innerFs.openFile(p, write = true, create = InnerFileSystem.CreateMode.CREATE_OR_FAIL).use { pFile ->
-                        channelCopy(sFile, pFile)
-                    }
-                }
-            }
+        options.forEach {
+            if (it != StandardCopyOption.REPLACE_EXISTING)
+                throw UnsupportedOperationException("Unsupported option $it")
         }
+
+        s.innerFs.copy(s, p, StandardCopyOption.REPLACE_EXISTING in options)
     }
 
     override fun move(source: Path?, target: Path?, vararg options: CopyOption?) {
         val s = requireInnerFsPath(source?.normalize())
         val p = requireInnerFsPath(target?.normalize())
-        require(p.isAbsolute)
-        require(s.isAbsolute)
 
         var replaceExisting = false
         var atomicMove = false
@@ -69,44 +52,7 @@ class InnerFileSystemProvider : FileSystemProvider() {
             else -> throw UnsupportedOperationException("Option $o is not supported")
         }
 
-        if (source?.normalize() == target?.normalize())
-            return
-
-        directoriesOperation(s, p, atomicMove) {
-            if (s.innerFs == p.innerFs) {
-                val (sLocation, sEntry) = s.innerFs.locateEntry(s) ?: throw NoSuchFileException("$s")
-                val sParentBlock = s.innerFs.locateBlock(requireInnerFsPath(s.parent)) ?: throw NoSuchFileException("${s.parent}")
-                val pParentBlock = p.innerFs.locateBlock(requireInnerFsPath(p.parent)) ?: throw NoSuchFileException("${p.parent}")
-                val resultEntry = sEntry.copy(name = p.fileNameString)
-                val locatedPEntry = p.innerFs.locateEntry(p)
-                if (locatedPEntry != null) {
-                    if (StandardCopyOption.REPLACE_EXISTING !in options)
-                        throw FileAlreadyExistsException("$p")
-                    p.innerFs.deleteFile(p)
-                    p.innerFs.rewriteEntry(pParentBlock, locatedPEntry.location, resultEntry)
-                } else {
-                    p.innerFs.addEntryToDirectory(pParentBlock, resultEntry)
-                }
-                synchronized(p.innerFs.openFileDescriptors) {
-                    if (s.innerFs.fileDescriptorByBlock.containsKey(sEntry.firstBlockLocation))
-                        throw FileIsInUseException(s, "Cannot move the file")
-                    s.innerFs.markEntryDeleted(sParentBlock, sLocation)
-                }
-            } else {
-                if (Files.isDirectory(s))
-                    throw IOException("Directory $s cannot be moved. Use `Files.walkFileTree` + `copy` instead")
-
-                s.innerFs.openFile(s, read = true, create = InnerFileSystem.CreateMode.OPEN_OR_FAIL).use { sFile ->
-                    if (Files.exists(p))
-                        if (replaceExisting)
-                            throw FileAlreadyExistsException("$p") else
-                            Files.delete(p)
-                    p.innerFs.openFile(p, write = true, create = InnerFileSystem.CreateMode.CREATE_OR_FAIL).use { pFile ->
-                        channelCopy(sFile, pFile)
-                    }
-                }
-            }
-        }
+        s.innerFs.move(s, p, replaceExisting, atomicMove)
     }
 
     override fun <V : FileAttributeView?> getFileAttributeView(path: Path?, type: Class<V>?, vararg options: LinkOption?): V {
@@ -296,34 +242,8 @@ class InnerFileSystemProvider : FileSystemProvider() {
         val p = requireInnerFsPath(dir)
         p.innerFs.createDirectory(p)
     }
-//endregion Java NIO SPI
 
-    private inline fun directoriesOperation(s: InnerPath, p: InnerPath, atomic: Boolean, actions: () -> Unit) {
-        if (atomic) {
-            val sParent = requireInnerFsPath(s.parent?.normalize())
-            val pParent = requireInnerFsPath(p.parent?.normalize())
-            val sParentBlock = s.innerFs.locateBlock(sParent) ?: throw NoSuchFileException("$sParent")
-            val pParentBlock = p.innerFs.locateBlock(pParent) ?: throw NoSuchFileException("$pParent")
-            // To maintain the globally ordered locking, check if one of the paths is an ancestor of the other
-            // and if not, lock the block which has lower number first
-            val outer = when {
-                sParent.startsWith(pParent) -> sParentBlock
-                pParent.startsWith(sParent) -> pParentBlock
-                s < p -> sParentBlock
-                else -> pParentBlock
-            }
-            val outerFs = if (outer == sParentBlock) s.innerFs else p.innerFs
-            val inner = if (outer == sParentBlock) pParentBlock else sParentBlock
-            val innerFs = if (outerFs == s.innerFs) p.innerFs else s.innerFs
-            outerFs.criticalForBlock(outer, write = true) {
-                innerFs.criticalForBlock(inner, write = true) {
-                    actions()
-                }
-            }
-        } else {
-            actions()
-        }
-    }
+//endregion Java NIO SPI
 
     override fun equals(other: Any?): Boolean {
         return other is InnerFileSystemProvider

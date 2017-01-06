@@ -29,7 +29,7 @@ class IfsOperationsTest {
         assertEquals(originalSize + BLOCK_SIZE, ifs.underlyingChannel.size())
 
         ifs.deallocateBlock(allocatedBlock)
-        val freeBlock = negativeTransform(ifs.getFreeBlocks().entry.firstBlockLocation)
+        val freeBlock = ifs.getFreeBlocks().entry.firstBlockLocation
         assertEquals(allocatedBlock, freeBlock)
 
         val allocatedAgain = ifs.allocateBlock { }
@@ -47,6 +47,7 @@ class IfsOperationsTest {
 
     @Test fun defaultDirectoryEntriesRead() {
         val entries = ifs.entriesFromBlocksAt(0L).toList()
+        assertTrue(entries[0].value.isFreeBlocksEntry)
         assertTrue(entries.drop(1).all { !it.entry.exists })
         assertTrue(entries.drop(1).all { it.entry.name == EMPTY_ENTRY_NAME })
         assertTrue(entries.drop(1).all { (it.location - BlockHeader.size) % DirectoryEntry.size == 0L })

@@ -121,4 +121,9 @@ class NioSpiTest {
         assertTrue(attrs.isRegularFile)
         assertFalse(attrs.isDirectory)
     }
+
+    @Test fun fileStore() {
+        val fileStore = ifs.fileStores.single()
+        assertEquals(ifs.isReadOnly, fileStore.isReadOnly)
+    }
 }

@@ -2,7 +2,8 @@ package com.github.h0tk3y.innerFs
 
 import java.nio.ByteBuffer
 
-const val BLOCK_SIZE = 4096
+internal const val BLOCK_SIZE = 4096
+internal const val FREE_BLOCKS_ENTRY_FLAG_SIZE = -2L
 
 internal interface ByteStructure {
     fun writeTo(buffer: ByteBuffer)
@@ -47,7 +48,7 @@ internal data class DirectoryEntry(
     val nameBytes get() = name.toByteArray(Charsets.UTF_8)
 
     val exists get() = firstBlockLocation > BlockHeader.NO_NEXT_BLOCK
-    internal val isFreeBlocksEntry get() = firstBlockLocation < 0
+    internal val isFreeBlocksEntry get() = size == FREE_BLOCKS_ENTRY_FLAG_SIZE
 
     init {
         require(NameChecker.isValidName(name))

@@ -18,6 +18,69 @@ class InnerFileSystemProvider : FileSystemProvider() {
 
     //region Java NIO SPI
 
+    override fun getScheme(): String = "ifs"
+
+    fun newFileSystem(uri: URI?) = newFileSystem(uri, emptyMap<String, Any>())
+
+    override fun newFileSystem(uri: URI?, env: Map<String, *>?) = newFileSystem(DefaultFileSystemProvider.create().getPath(uri), env)
+
+    fun newFileSystem(path: Path) = newFileSystem(path, emptyMap<String, Any>())
+
+    override fun newFileSystem(path: Path, env: Map<String, *>?): InnerFileSystem {
+        synchronized(createdFileSystems) {
+            val normalizedAbsolutePath = path.toAbsolutePath().normalize()
+            val existingFs = createdFileSystems[normalizedAbsolutePath]
+            if (existingFs != null && existingFs.isOpen)
+                throw FileSystemAlreadyExistsException()
+
+            val fs = InnerFileSystem(normalizedAbsolutePath, !Files.exists(path))
+            createdFileSystems[normalizedAbsolutePath] = fs
+            return fs
+        }
+    }
+
+    override fun getFileSystem(uri: URI?): InnerFileSystem? =
+            synchronized(createdFileSystems) {
+                val path = Paths.get(uri)?.toAbsolutePath()?.normalize() ?: return@synchronized null
+                createdFileSystems[path] ?: throw FileSystemNotFoundException()
+            }
+
+    fun getOrCreateFileSystem(path: Path): InnerFileSystem {
+        synchronized(createdFileSystems) {
+            return try {
+                getFileSystem(path.toUri())
+            } catch (_: FileSystemNotFoundException) {
+                null
+            } ?: newFileSystem(path, emptyMap<String, Any>())
+        }
+    }
+
+    override fun getPath(uri: URI?): Path? {
+        requireNotNull(uri)
+        val schemeSpecificPart = uri!!.schemeSpecificPart
+        val fsPath = schemeSpecificPart.substringBeforeLast("!/")
+        if (fsPath == schemeSpecificPart)
+            throw IllegalAccessException("The URI '$uri' is malformed. Correct URI: '$scheme:file:/c:/foo.ifs!/bar'.")
+        val fs = synchronized(createdFileSystems) {
+            getFileSystem(URI.create(fsPath)) ?:
+            newFileSystem(Paths.get(fsPath), emptyMap<String, Unit>())
+        }
+        return fs.getPath(schemeSpecificPart.substringAfterLast("!"))
+    }
+
+    override fun isSameFile(path: Path?, path2: Path?): Boolean {
+        val p1 = requireInnerFsPath(path)
+        val p2 = requireInnerFsPath(path2)
+        if (p1 == p2)
+            return true
+        if (p1.innerFs == p2.innerFs) {
+            checkAccess(p1)
+            checkAccess(p2)
+            return p1.normalize() == p2.normalize()
+        }
+        return false
+    }
+
     override fun checkAccess(path: Path, vararg modes: AccessMode?) {
         val p = requireInnerFsPath(path)
         if (AccessMode.EXECUTE in modes)
@@ -27,32 +90,9 @@ class InnerFileSystemProvider : FileSystemProvider() {
         p.innerFs.locateEntry(p) ?: throw NoSuchFileException("$path")
     }
 
-    override fun copy(source: Path?, target: Path?, vararg options: CopyOption?) {
-        val s = requireInnerFsPath(source?.normalize())
-        val p = requireInnerFsPath(target?.normalize())
-
-        options.forEach {
-            if (it != StandardCopyOption.REPLACE_EXISTING)
-                throw UnsupportedOperationException("Unsupported option $it")
-        }
-
-        s.innerFs.copy(s, p, StandardCopyOption.REPLACE_EXISTING in options)
-    }
-
-    override fun move(source: Path?, target: Path?, vararg options: CopyOption?) {
-        val s = requireInnerFsPath(source?.normalize())
-        val p = requireInnerFsPath(target?.normalize())
-
-        var replaceExisting = false
-        var atomicMove = false
-
-        for (o in options) when (o) {
-            StandardCopyOption.REPLACE_EXISTING -> replaceExisting = true
-            StandardCopyOption.ATOMIC_MOVE -> atomicMove = true
-            else -> throw UnsupportedOperationException("Option $o is not supported")
-        }
-
-        s.innerFs.move(s, p, replaceExisting, atomicMove)
+    override fun isHidden(path: Path?): Boolean {
+        val p = requireInnerFsPath(path)
+        return p.fileNameString.startsWith(".")
     }
 
     override fun <V : FileAttributeView?> getFileAttributeView(path: Path?, type: Class<V>?, vararg options: LinkOption?): V {
@@ -83,57 +123,47 @@ class InnerFileSystemProvider : FileSystemProvider() {
         } as V
     }
 
-    override fun isSameFile(path: Path?, path2: Path?): Boolean {
-        val p1 = requireInnerFsPath(path)
-        val p2 = requireInnerFsPath(path2)
-        if (p1 == p2)
-            return true
-        if (p1.innerFs == p2.innerFs) {
-            checkAccess(p1)
-            checkAccess(p2)
-            return p1.normalize() == p2.normalize()
-        }
-        return false
+    override fun <A : BasicFileAttributes?> readAttributes(path: Path?, type: Class<A>?, vararg options: LinkOption?): A {
+        if (type != BasicFileAttributes::class.java)
+            throw UnsupportedOperationException("Attributes for $type are not supported")
+        @Suppress("UNCHECKED_CAST")
+        return getFileAttributeView(path, BasicFileAttributeView::class.java).readAttributes() as A
     }
 
-    fun newFileSystem(uri: URI?) = newFileSystem(uri, emptyMap<String, Any>())
-    override fun newFileSystem(uri: URI?, env: Map<String, *>?) = newFileSystem(DefaultFileSystemProvider.create().getPath(uri), env)
+    override fun readAttributes(path: Path?, attributes: String?, vararg options: LinkOption?) =
+            throw UnsupportedOperationException()
 
-    fun newFileSystem(path: Path) = newFileSystem(path, emptyMap<String, Any>())
-    override fun newFileSystem(path: Path, env: Map<String, *>?): InnerFileSystem {
-        synchronized(createdFileSystems) {
-            val normalizedAbsolutePath = path.toAbsolutePath().normalize()
-            val existingFs = createdFileSystems[normalizedAbsolutePath]
-            if (existingFs != null && existingFs.isOpen)
-                throw FileSystemAlreadyExistsException()
+    override fun copy(source: Path?, target: Path?, vararg options: CopyOption?) {
+        val s = requireInnerFsPath(source?.normalize())
+        val p = requireInnerFsPath(target?.normalize())
 
-            val fs = InnerFileSystem(normalizedAbsolutePath, !Files.exists(path))
-            createdFileSystems[normalizedAbsolutePath] = fs
-            return fs
+        options.forEach {
+            if (it != StandardCopyOption.REPLACE_EXISTING)
+                throw UnsupportedOperationException("Unsupported option $it")
         }
+
+        s.innerFs.copy(s, p, StandardCopyOption.REPLACE_EXISTING in options)
     }
 
-    override fun getFileSystem(uri: URI?): InnerFileSystem? =
-            synchronized(createdFileSystems) {
-                val path = Paths.get(uri)?.toAbsolutePath()?.normalize() ?: return@synchronized null
-                createdFileSystems[path] ?: throw FileSystemNotFoundException()
-            }
+    override fun move(source: Path?, target: Path?, vararg options: CopyOption?) {
+        val s = requireInnerFsPath(source?.normalize())
+        val p = requireInnerFsPath(target?.normalize())
 
-    fun getOrCreateFileSystem(path: Path): InnerFileSystem {
-        synchronized(createdFileSystems) {
-            return try {
-                getFileSystem(path.toUri())
-            } catch (_: FileSystemNotFoundException) {
-                null
-            } ?: newFileSystem(path, emptyMap<String, Any>())
+        var replaceExisting = false
+        var atomicMove = false
+
+        for (o in options) when (o) {
+            StandardCopyOption.REPLACE_EXISTING -> replaceExisting = true
+            StandardCopyOption.ATOMIC_MOVE -> atomicMove = true
+            else -> throw UnsupportedOperationException("Option $o is not supported")
         }
+
+        s.innerFs.move(s, p, replaceExisting, atomicMove)
     }
 
-    override fun getScheme(): String = "ifs"
-
-    override fun isHidden(path: Path?): Boolean {
+    override fun delete(path: Path?) {
         val p = requireInnerFsPath(path)
-        return p.fileNameString.startsWith(".")
+        p.innerFs.deleteFile(p)
     }
 
     override fun newDirectoryStream(dir: Path?, filter: DirectoryStream.Filter<in Path>): DirectoryStream<Path> {
@@ -164,6 +194,12 @@ class InnerFileSystemProvider : FileSystemProvider() {
             }
         }
     }
+
+    override fun createDirectory(dir: Path?, vararg attrs: FileAttribute<*>?) {
+        val p = requireInnerFsPath(dir)
+        p.innerFs.createDirectory(p, failIfExists = true, createMissingDirectories = false)
+    }
+
 
     override fun newByteChannel(path: Path?,
                                 options: MutableSet<out OpenOption>,
@@ -202,45 +238,12 @@ class InnerFileSystemProvider : FileSystemProvider() {
                                   })
     }
 
-    override fun delete(path: Path?) {
-        val p = requireInnerFsPath(path)
-        p.innerFs.deleteFile(p)
-    }
-
-    override fun <A : BasicFileAttributes?> readAttributes(path: Path?, type: Class<A>?, vararg options: LinkOption?): A {
-        if (type != BasicFileAttributes::class.java)
-            throw UnsupportedOperationException("Attributes for $type are not supported")
-        @Suppress("UNCHECKED_CAST")
-        return getFileAttributeView(path, BasicFileAttributeView::class.java).readAttributes() as A
-    }
-
-    override fun readAttributes(path: Path?, attributes: String?, vararg options: LinkOption?) =
-            throw UnsupportedOperationException()
-
-    override fun getPath(uri: URI?): Path? {
-        requireNotNull(uri)
-        val schemeSpecificPart = uri!!.schemeSpecificPart
-        val fsPath = schemeSpecificPart.substringBeforeLast("!/")
-        if (fsPath == schemeSpecificPart)
-            throw IllegalAccessException("The URI '$uri' is malformed. Correct URI: '$scheme:file:/c:/foo.ifs!/bar'.")
-        val fs = synchronized(createdFileSystems) {
-            getFileSystem(URI.create(fsPath)) ?:
-            newFileSystem(Paths.get(fsPath), emptyMap<String, Unit>())
-        }
-        return fs.getPath(schemeSpecificPart.substringAfterLast("!"))
-    }
-
     override fun getFileStore(path: Path?): FileStore {
         return requireInnerFsPath(path).innerFs.fileStores.single()
     }
 
     override fun setAttribute(path: Path?, attribute: String?, value: Any?, vararg options: LinkOption?) {
         throw UnsupportedOperationException("Setting attributes is not supported for InnerFS.")
-    }
-
-    override fun createDirectory(dir: Path?, vararg attrs: FileAttribute<*>?) {
-        val p = requireInnerFsPath(dir)
-        p.innerFs.createDirectory(p)
     }
 
 //endregion Java NIO SPI

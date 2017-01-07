@@ -1,7 +1,7 @@
-package com.github.h0tk3y.innerFs
+package com.github.h0tk3y.innerFs.dsl
 
-import com.github.h0tk3y.innerFs.dsl.div
-import com.github.h0tk3y.innerFs.dsl.innerFs
+import com.github.h0tk3y.innerFs.InnerPath
+import com.github.h0tk3y.innerFs.tempInnerFileSystem
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test

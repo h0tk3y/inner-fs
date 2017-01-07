@@ -9,11 +9,17 @@ import java.nio.file.Path
 import java.nio.file.Paths
 
 class InnerFileSystemDslContext(val here: InnerPath) {
-    fun directory(name: String, initialize: InnerFileSystemDslContext.() -> Unit): InnerPath {
-        val directoryPath = here.resolve(name)
-        here.innerFs.createDirectory(directoryPath, failIfExists = false)
-        initialize(InnerFileSystemDslContext(directoryPath))
+    fun directory(directoryPath: InnerPath, initialize: InnerFileSystemDslContext.() -> Unit): InnerPath {
+        require(directoryPath.innerFs == here.innerFs)
+        val path = here.resolve(directoryPath)
+        here.innerFs.createDirectory(path, failIfExists = false)
+        initialize(InnerFileSystemDslContext(path))
         return directoryPath
+    }
+
+    fun directory(name: String, initialize: InnerFileSystemDslContext.() -> Unit): InnerPath {
+        val path = InnerPath(here.innerFs, listOf(name))
+        return directory(path, initialize)
     }
 
     fun file(name: String, initialize: FileChannel.() -> Unit): InnerPath {

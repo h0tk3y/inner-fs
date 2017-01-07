@@ -22,6 +22,7 @@ internal class BlocksFileChannel(val fileDescriptor: FileDescriptor,
     private var closed = false
 
     private fun checkNotClosed() {
+        if (!fileDescriptor.innerFs.isOpen) throw IllegalStateException("The file system has been closed")
         if (closed) throw IllegalStateException("The channel has been closed")
     }
 
@@ -150,12 +151,17 @@ internal class BlocksFileChannel(val fileDescriptor: FileDescriptor,
         return fileDescriptor.size
     }
 
-    override fun transferTo(position: Long, count: Long, target: WritableByteChannel): Long =
-            fileDescriptor.critical(READ) {
-                val buffer = ByteBuffer.allocate(count.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
-                read(buffer, position)
-                target.write(buffer).toLong()
-            }
+    override fun transferTo(position: Long, count: Long, target: WritableByteChannel): Long {
+        val intCount = count.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        return fileDescriptor.critical(if (target is BlocksFileChannel && target.fileDescriptor == fileDescriptor)
+                                           writeLevel(intCount) else
+                                           READ) {
+            val buffer = ByteBuffer.allocate(intCount)
+            read(buffer, position)
+            buffer.flip()
+            target.write(buffer).toLong()
+        }
+    }
 
     private fun readBuffer(dst: ByteBuffer, sourceInFile: Long): Int {
         checkReadable()
@@ -206,6 +212,7 @@ internal class BlocksFileChannel(val fileDescriptor: FileDescriptor,
         fileDescriptor.critical(writeLevel(bytes)) {
             val buffer = ByteBuffer.allocate(bytes)
             src.read(buffer)
+            buffer.flip()
             return write(buffer, position).toLong()
         }
     }

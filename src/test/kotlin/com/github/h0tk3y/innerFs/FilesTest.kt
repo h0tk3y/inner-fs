@@ -1,13 +1,17 @@
 package com.github.h0tk3y.innerFs
 import com.github.h0tk3y.innerFs.InnerFileSystem.CreateMode.CREATE_OR_OPEN
 import com.github.h0tk3y.innerFs.InnerFileSystem.CreateMode.OPEN_OR_FAIL
+import com.github.h0tk3y.innerFs.dsl.div
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import java.nio.ByteBuffer
+import java.nio.channels.FileChannel
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
+import java.nio.file.StandardOpenOption.CREATE
+import java.nio.file.StandardOpenOption.WRITE
 
 /**
  * Created by igushs on 12/29/16.
@@ -109,6 +113,60 @@ class FilesTest {
             h.read(ones)
             assertTrue(ones.array().all { it == 1.toByte() })
         }
+    }
+
+    @Test fun transferFrom() {
+        val dataSize = BLOCK_SIZE * 8 + 1
+        val data = ByteBuffer.wrap(ByteArray(dataSize, Int::toByte))
+
+        val channelFrom = FileChannel.open(ifs / "a.txt", CREATE, WRITE)
+        channelFrom.write(data)
+        channelFrom.position(0)
+
+        val channelTo = FileChannel.open(ifs / "b.txt", CREATE, WRITE)
+        channelTo.transferFrom(channelFrom, 0, channelFrom.size())
+
+        val dataToCheck = ByteBuffer.allocate(dataSize)
+        channelTo.read(dataToCheck, 0L)
+        dataToCheck.position(0)
+        for (i in 0..dataSize - 1)
+            assertEquals(i.toByte(), dataToCheck.get())
+    }
+
+    @Test fun transferTo() {
+        val dataSize = BLOCK_SIZE * 8 + 1
+        val data = ByteBuffer.wrap(ByteArray(dataSize, Int::toByte))
+
+        val channelFrom = FileChannel.open(ifs / "a.txt", CREATE, WRITE)
+        channelFrom.write(data)
+
+        val channelTo = FileChannel.open(ifs / "b.txt", CREATE, WRITE)
+        channelFrom.transferTo(0, channelFrom.size(), channelTo)
+
+        val dataToCheck = ByteBuffer.allocate(dataSize)
+        channelTo.read(dataToCheck, 0L)
+        dataToCheck.position(0)
+        for (i in 0..dataSize - 1)
+            assertEquals(i.toByte(), dataToCheck.get())
+    }
+
+    @Test fun transferSelf() {
+        val dataSize = BLOCK_SIZE * 8 + 1
+        val data = ByteBuffer.wrap(ByteArray(dataSize, Int::toByte))
+
+        val channelFrom = FileChannel.open(ifs / "a.txt", CREATE, WRITE)
+        channelFrom.write(data)
+
+        channelFrom.transferTo(0, channelFrom.size(), channelFrom)
+
+        val dataToCheck = ByteBuffer.allocate(dataSize * 2)
+        channelFrom.position(0L)
+        channelFrom.read(dataToCheck, 0L)
+        dataToCheck.position(0)
+        for (i in 0..dataSize - 1)
+            assertEquals(i.toByte(), dataToCheck.get())
+        for (i in 0..dataSize - 1)
+            assertEquals(i.toByte(), dataToCheck.get())
     }
 
     @Test fun truncateExisting() {

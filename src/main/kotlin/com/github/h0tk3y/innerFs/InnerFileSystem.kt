@@ -153,6 +153,11 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
     internal fun locateBlock(path: InnerPath, startingFromLocation: Long = ROOT_LOCATION) =
             locateBlock(path, false, startingFromLocation) { it }
 
+    /**
+     * Given a [path], locates its block starting from [startingFromLocation] block, and then, while still holding
+     * the innermost directory lock, calculates the [transform] of the found block and returns it.
+     * Returns null if no block was found.
+     */
     private fun <T> locateBlock(path: InnerPath, write: Boolean = false, startingFromLocation: Long = ROOT_LOCATION, transform: (Long) -> T): T? {
         var currentBlock = startingFromLocation
         for (i in path.pathSegments.indices.drop(if (path.isAbsolute) 1 else 0)) {
@@ -175,6 +180,12 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
     internal fun locateEntry(path: InnerPath, startingFromLocation: Long = ROOT_LOCATION) =
             locateEntry(path, false, startingFromLocation) { it }
 
+    /**
+     * Locates and returns a file system entry for the given [path], starting from the givan [startingFromLocation] and
+     * then, still holding the lock of the parent directory, calculates the [transform] of the
+     * found [Located] [DirectoryEntry].
+     * Returns null if no entry was found.
+     */
     internal fun <T> locateEntry(path: InnerPath,
                                  write: Boolean = false,
                                  startingFromLocation: Long = ROOT_LOCATION, transform: (Located<DirectoryEntry>) -> T): T? {
@@ -221,6 +232,10 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
 
     internal fun entriesFromBlocksAt(firstBlockLocation: Long) = entriesFromBlocks(blocksSequence(firstBlockLocation))
 
+    /**
+     * Rewrites a [DirectoryEntry] contained in a directory starting at [directoryLocation] and located at
+     * [entryLocation] with the given [newEntry].
+     */
     internal fun rewriteEntry(
             directoryLocation: Long,
             entryLocation: Long,
@@ -229,10 +244,6 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
             val bytes = newEntry.bytes()
             writeOut(bytes, entryLocation + bytes.position())
         }
-    }
-
-    internal fun markEntryDeleted(directoryLocation: Long, entryLocation: Long) {
-        rewriteEntry(directoryLocation, entryLocation, DirectoryEntry(false, BlockHeader.NO_NEXT_BLOCK, -1, EMPTY_ENTRY_NAME))
     }
 
     internal fun getFreeBlocks(): Located<DirectoryEntry> =
@@ -331,6 +342,10 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
         return entriesFromBlocksAt(location)
                 .filter { it.entry.exists }
                 .map { InnerPath(this, path.pathSegments + it.entry.name) }
+    }
+
+    private fun markEntryDeleted(directoryLocation: Long, entryLocation: Long) {
+        rewriteEntry(directoryLocation, entryLocation, DirectoryEntry(false, BlockHeader.NO_NEXT_BLOCK, -1, EMPTY_ENTRY_NAME))
     }
 
     fun deleteFile(path: InnerPath) {
@@ -487,6 +502,10 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
         }
     }
 
+    /**
+     * Executes [actions]: if required to be [atomic], acquires locks for parents of [s] and [p]
+     * in a correct order first.
+     */
     private inline fun directoriesOperation(s: InnerPath, p: InnerPath, atomic: Boolean, actions: () -> Unit) {
         if (atomic) {
             val sParent = requireInnerFsPath(s.parent?.normalize())
@@ -512,7 +531,12 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
         }
     }
 
-    fun createDirectory(path: InnerPath, failIfExists: Boolean = true) {
+    fun createDirectory(path: InnerPath, failIfExists: Boolean = true, createMissingDirectories: Boolean = false) {
+        if (createMissingDirectories) {
+            Files.createDirectories(path)
+            return
+        }
+
         if (failIfExists)
             checkWritable()
 

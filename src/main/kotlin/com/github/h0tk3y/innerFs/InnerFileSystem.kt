@@ -427,6 +427,9 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
             return
 
         directoriesOperation(from, to, atomically) {
+            if (Files.isDirectory(from))
+                throw IOException("Directory $from cannot be moved. Use `Files.walkFileTree` + `copy` instead")
+
             if (to.innerFs == this) {
                 val (sLocation, sEntry) = locateEntry(from) ?: throw NoSuchFileException("$from")
                 val sParentBlock = locateBlock(requireInnerFsPath(from.parent)) ?: throw NoSuchFileException("${from.parent}")
@@ -449,9 +452,6 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
                     }
                 }
             } else {
-                if (Files.isDirectory(from))
-                    throw IOException("Directory $from cannot be moved. Use `Files.walkFileTree` + `copy` instead")
-
                 openFile(from, read = true, create = OPEN_OR_FAIL).use { sFile ->
                     if (Files.exists(to))
                         if (replaceExisting)

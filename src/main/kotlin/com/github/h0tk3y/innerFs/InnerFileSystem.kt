@@ -512,8 +512,9 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
         }
     }
 
-    fun createDirectory(path: InnerPath) {
-        checkWritable()
+    fun createDirectory(path: InnerPath, failIfExists: Boolean = true) {
+        if (failIfExists)
+            checkWritable()
 
         require(path.isAbsolute)
         require(path != path.root)
@@ -523,7 +524,9 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
         criticalForBlock(parentBlock, write = true) {
             val entries = entriesFromBlocksAt(parentBlock)
             if (entries.any { (_, e) -> e.name == path.fileNameString })
-                throw FileAlreadyExistsException("$path")
+                if (failIfExists)
+                    throw FileAlreadyExistsException("$path") else
+                    return
             val dataBlock = allocateBlock(initializeDirectoryBlock)
             addEntryToDirectory(parentBlock, DirectoryEntry(true, dataBlock, 0L, path.fileNameString))
         }

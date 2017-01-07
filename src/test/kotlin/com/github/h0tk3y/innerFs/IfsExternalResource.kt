@@ -19,10 +19,9 @@ internal class IfsExternalResource : BeforeEachCallback, AfterEachCallback {
             .filter { it.isLateinit && it.returnType.classifier == InnerFileSystem::class }
             .filterIsInstance<KMutableProperty<*>>()
 
-    val random = Random()
 
     override fun beforeEach(context: TestExtensionContext) = ifsProperties(context).forEach {
-        val ifs = InnerFileSystemProvider().newFileSystem(Paths.get("./test-inner-fs-${random.nextLong()}.ifs"))
+        val ifs = tempInnerFileSystem()
         it.setter.call(context.testInstance, ifs)
     }
 
@@ -32,3 +31,6 @@ internal class IfsExternalResource : BeforeEachCallback, AfterEachCallback {
         Files.deleteIfExists(ifs.underlyingPath)
     }
 }
+
+private val random = Random()
+internal fun tempInnerFileSystem() = InnerFileSystemProvider().newFileSystem(Paths.get("./test-inner-fs-${random.nextLong()}.ifs"))

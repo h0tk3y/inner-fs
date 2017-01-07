@@ -1,25 +1,33 @@
 package com.github.h0tk3y.innerFs.dsl
 
 import com.github.h0tk3y.innerFs.InnerFileSystem
+import com.github.h0tk3y.innerFs.InnerFileSystem.CreateMode.CREATE_OR_OPEN
 import com.github.h0tk3y.innerFs.InnerFileSystemProvider
 import com.github.h0tk3y.innerFs.InnerPath
 import java.nio.channels.FileChannel
 import java.nio.file.Path
 import java.nio.file.Paths
 
-class InnerFileSystemDslContext(val path: InnerPath) {
+class InnerFileSystemDslContext(val here: InnerPath) {
     fun directory(name: String, initialize: InnerFileSystemDslContext.() -> Unit): InnerPath {
-        val directoryPath = path.resolve(name)
-        path.innerFs.createDirectory(directoryPath)
+        val directoryPath = here.resolve(name)
+        here.innerFs.createDirectory(directoryPath, failIfExists = false)
         initialize(InnerFileSystemDslContext(directoryPath))
         return directoryPath
     }
 
     fun file(name: String, initialize: FileChannel.() -> Unit): InnerPath {
-        val filePath = path.resolve(name)
-        val channel = path.innerFs.openFile(filePath, read = false, write = true)
-        initialize(channel)
-        return filePath
+        val path = InnerPath(here.innerFs, listOf(name))
+        return file(path, initialize)
+    }
+
+    fun file(filePath: InnerPath, initialize: FileChannel.() -> Unit): InnerPath {
+        require(filePath.innerFs == here.innerFs)
+        val path = here.resolve(filePath)
+        here.innerFs.openFile(path, read = false, write = true, create = CREATE_OR_OPEN).use {
+            initialize(it)
+        }
+        return path
     }
 }
 

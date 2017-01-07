@@ -7,6 +7,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.nio.ByteBuffer
 import java.nio.file.Files
+import java.nio.file.StandardOpenOption.CREATE
+import java.nio.file.StandardOpenOption.WRITE
 import java.util.*
 
 /**
@@ -78,6 +80,43 @@ class DslTest {
             }
         } finally {
             Files.delete(ifs.underlyingPath)
+        }
+    }
+
+    @Test fun workingWithExistingFs() {
+        tempInnerFileSystem().use { ifs ->
+            val dir = ifs / "a" / "b" / "c"
+            Files.createDirectories(dir)
+            Files.newByteChannel(dir / "a.txt", CREATE, WRITE).use { channel ->
+                channel.write(ByteBuffer.wrap("Hello".toByteArray()))
+            }
+
+            // now open it with DSL
+            innerFs(ifs.underlyingPath) {
+                directory("a") {
+                    directory("b") {
+                        directory("c") {
+                            file("a.txt") {
+                                assertEquals("Hello".toByteArray().size, size().toInt())
+                                position(size())
+                                write(ByteBuffer.wrap(", world!".toByteArray()))
+                            }
+                        }
+                    }
+                }
+
+                file(here / "a" / "b" / "c" / "a.txt") {
+                    assertEquals("Hello, world!".toByteArray().size, size().toInt())
+                    position(size())
+                    write(ByteBuffer.wrap(" Hello, world!".toByteArray()))
+                }
+
+                directory("a") {
+                    file(here / "b" / "c" / "a.txt") {
+                        assertEquals("Hello, world! Hello, world!".toByteArray().size, size().toInt())
+                    }
+                }
+            }
         }
     }
 }

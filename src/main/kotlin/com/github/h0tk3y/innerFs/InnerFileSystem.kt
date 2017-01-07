@@ -2,7 +2,6 @@ package com.github.h0tk3y.innerFs
 
 import com.github.h0tk3y.innerFs.InnerFileSystem.CreateMode.*
 import kotlinx.coroutines.generate
-import java.io.FileNotFoundException
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
@@ -279,7 +278,7 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
             // get the next free block to store it in the root entry instead
             val header = BlockHeader.read(buffer)
             val nextFreeBlock = header.nextBlockLocation
-            rewriteEntry(ROOT_LOCATION, freeBlocks.location,
+            rewriteEntry(UNALLOCATED_BLOCKS, freeBlocks.location,
                          freeBlocks.entry.copy(firstBlockLocation = nextFreeBlock))
 
             // then initialize the allocated block
@@ -327,7 +326,7 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
             locateEntry(path, 0L)?.entry
                     ?.apply { if (!isDirectory) throw NotDirectoryException("File '$path' is not a directory") }
                     ?.firstBlockLocation
-            ?: throw FileNotFoundException("Directory '$path' does not exist.")
+            ?: throw NoSuchFileException("$path")
 
         return entriesFromBlocksAt(location)
                 .filter { it.entry.exists }
@@ -374,7 +373,7 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
         require(path.isAbsolute) { "The path should be absolute." }
         val parent = path.normalize().parent!!
         val parentLocation = locateBlock(parent, ROOT_LOCATION)
-                             ?: throw FileNotFoundException("Parent directory '$parent' not found for path '$path'")
+                             ?: throw NoSuchFileException("$parent")
 
         criticalForBlock(parentLocation, write = true) {
             val locatedEntry = entriesFromBlocksAt(parentLocation).find { (_, e) -> e.name == path.fileNameString }
@@ -442,10 +441,12 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
                 } else {
                     addEntryToDirectory(pParentBlock, resultEntry)
                 }
-                synchronized(openFileDescriptors) {
-                    if (from.innerFs.fileDescriptorByBlock.containsKey(sEntry.firstBlockLocation))
-                        throw FileIsInUseException(from, "Cannot move the file")
-                    markEntryDeleted(sParentBlock, sLocation)
+                criticalForBlock(sParentBlock, write = true) {
+                    synchronized(openFileDescriptors) {
+                        if (from.innerFs.fileDescriptorByBlock.containsKey(sEntry.firstBlockLocation))
+                            throw FileIsInUseException(from, "Cannot move the file")
+                        markEntryDeleted(sParentBlock, sLocation)
+                    }
                 }
             } else {
                 if (Files.isDirectory(from))

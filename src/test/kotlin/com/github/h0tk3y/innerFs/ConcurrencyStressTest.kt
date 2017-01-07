@@ -6,10 +6,7 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import java.nio.ByteBuffer
-import java.nio.file.Files
-import java.nio.file.NoSuchFileException
-import java.nio.file.Path
-import java.nio.file.StandardCopyOption
+import java.nio.file.*
 import java.nio.file.StandardOpenOption.*
 import java.time.Duration
 import java.util.concurrent.ArrayBlockingQueue
@@ -132,5 +129,81 @@ class ConcurrencyStressTest {
         val parity = count1.get() + count2.get()
         val fileThatShouldExist = if (parity % 2 == 0) path1 else path2
         assertTrue(Files.exists(fileThatShouldExist))
+    }
+
+    @Test fun pullFilesUp() {
+        val lowestDirectory = ifs / "a" / "b" / "c"
+        Files.createDirectories(lowestDirectory)
+        val filesToCreate = 500
+        val finishLatch = CountDownLatch(4)
+
+        thread {
+            // creates files in the lowest directory
+            repeat(filesToCreate) { fileId ->
+                Files.createFile(lowestDirectory / "$fileId")
+            }
+            finishLatch.countDown()
+        }
+
+        val filesPulledToB = AtomicInteger(0)
+        thread {
+            // pulls files from /a/b/c to /a/b
+            repeat(filesToCreate) {
+                Files.newDirectoryStream(lowestDirectory).use { stream ->
+                    val file = stream.asSequence().firstOrNull { !Files.isDirectory(it) } as InnerPath?
+                    if (file != null) {
+                        Files.move(file, ifs / "a" / "b" / file.fileName)
+                        filesPulledToB.incrementAndGet()
+                    }
+                }
+            }
+            finishLatch.countDown()
+        }
+
+        val filesPulledToA = AtomicInteger(0)
+        thread {
+            // pulls files from /a/b to /a
+            repeat(filesToCreate) {
+                Files.newDirectoryStream(ifs / "a" / "b").use { stream ->
+                    val file = stream.asSequence().firstOrNull { !Files.isDirectory(it) } as InnerPath?
+                    if (file != null) {
+                        Files.move(file, ifs / "a" / file.fileName)
+                        filesPulledToA.incrementAndGet()
+                    }
+                }
+            }
+            finishLatch.countDown()
+        }
+
+        val filesPulledToRoot = AtomicInteger(0)
+        thread {
+            // pulls files from /a to /
+            repeat(filesToCreate) {
+                Files.newDirectoryStream(ifs / "a").use { stream ->
+                    val file = stream.asSequence().firstOrNull { !Files.isDirectory(it) } as InnerPath?
+                    if (file != null) {
+                        Files.move(file, ifs.rootDirectories.single() / file.fileName)
+                        filesPulledToRoot.incrementAndGet()
+                    }
+                }
+            }
+            finishLatch.countDown()
+        }
+
+        finishLatch.await()
+
+        val countFiles: DirectoryStream<Path>.() -> Int = {
+            use { it.filter { !Files.isDirectory(it) }.count() }
+        }
+
+        val filesInRoot = Files.newDirectoryStream(ifs.rootDirectories.single()).countFiles()
+        val filesInA = Files.newDirectoryStream(ifs / "a").countFiles()
+        val filesInAb = Files.newDirectoryStream(ifs / "a" / "b").countFiles()
+        val filesInAbc = Files.newDirectoryStream(ifs / "a" / "b" / "c").countFiles()
+
+        assertEquals(filesPulledToRoot.get(), filesInRoot)
+        assertEquals(filesPulledToA.get() - filesPulledToRoot.get(), filesInA)
+        assertEquals(filesPulledToB.get() - filesPulledToA.get(), filesInAb)
+        assertEquals(filesToCreate - filesInA - filesInAb - filesInRoot, filesInAbc)
     }
 }

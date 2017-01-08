@@ -6,6 +6,12 @@ package com.github.h0tk3y.innerFs
 
 internal enum class CriticalLevel { READ, WRITE, WRITE_WITH_PARENT }
 
+/**
+ * In-memory structure for open files of an [innerFs]. A single file should have only one
+ * instance of FileDescriptor, and the users of that file exchange the file details update (e.g. its size) through
+ * this FileDescriptor.
+ * Manages locks for the file.
+ */
 internal class FileDescriptor(val innerFs: InnerFileSystem,
                               val parentLocation: Long,
                               locatedEntry: Located<DirectoryEntry>) {
@@ -50,11 +56,11 @@ internal class FileDescriptor(val innerFs: InnerFileSystem,
         return result
     }
 
-    fun openOneFile() {
+    fun openOne() {
         innerFs.openFileDescriptors.increase(fileLocation)
     }
 
-    fun closeOneFile() {
+    fun closeOne() {
         synchronized(innerFs.openFileDescriptors) {
             innerFs.openFileDescriptors.decrease(fileLocation)
         }

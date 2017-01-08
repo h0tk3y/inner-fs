@@ -409,7 +409,7 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
                     val fd = fileDescriptorByBlock.getOrPut(fileLocation) {
                         FileDescriptor(this, parentLocation, actualEntry)
                     }
-                    fd.openOneFile()
+                    fd.openOne()
                     if (create == CREATE_OR_FAIL)
                         throw FileAlreadyExistsException("File '$path' already exists.")
                     return BlocksFileChannel(fd, read, write, append)
@@ -427,7 +427,7 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
                 val directoryEntry = DirectoryEntry(false, dataBlock, ROOT_LOCATION, path.pathSegments.last())
                 val e = addEntryToDirectory(parentLocation, directoryEntry)
                 val fd = FileDescriptor(this, parentLocation, e)
-                fd.openOneFile()
+                fd.openOne()
                 fileDescriptorByBlock[dataBlock] = fd
                 return BlocksFileChannel(fd, read, write, append)
             }

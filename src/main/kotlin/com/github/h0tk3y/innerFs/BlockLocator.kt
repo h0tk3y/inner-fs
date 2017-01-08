@@ -1,5 +1,10 @@
 package com.github.h0tk3y.innerFs
 
+/**
+ * Provides location in a linked list of blocks starting at [inialBlockLocation], each of [blockDataSize] and
+ * having [blockHeaderSize] bytes header in their beginning. The blocks chain is lazily read with [blockReader]
+ * when the request to a target beyond the known range appears.
+ */
 internal class BlockLocator(initialBlockLocation: Long,
                             val blockDataSize: Int = dataBytesInBlock,
                             val blockHeaderSize: Int = BlockHeader.size,

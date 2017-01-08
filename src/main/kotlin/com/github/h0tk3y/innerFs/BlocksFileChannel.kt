@@ -126,7 +126,7 @@ internal class BlocksFileChannel(val fileDescriptor: FileDescriptor,
     }
 
     override fun implCloseChannel() {
-        fileDescriptor.closeOneFile()
+        fileDescriptor.closeOne()
         closed = true
     }
 

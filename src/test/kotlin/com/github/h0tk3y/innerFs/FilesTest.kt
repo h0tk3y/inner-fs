@@ -214,13 +214,17 @@ class FilesTest {
         file.close()
 
         val dirAttrs = Files.readAttributes(path.parent, BasicFileAttributes::class.java)
-        assertTrue(dirAttrs.creationTime() >= FileTime.fromMillis(now0))
+        assertTrue(FileTime.fromMillis(now0) <= dirAttrs.creationTime() &&
+                   dirAttrs.creationTime() <= FileTime.fromMillis(now1))
         assertEquals(FileTime.fromMillis(0L), dirAttrs.lastModifiedTime())
         assertEquals(FileTime.fromMillis(0L), dirAttrs.lastAccessTime())
 
         val fileAttrs = Files.readAttributes(path, BasicFileAttributes::class.java)
-        assertTrue(fileAttrs.creationTime() >= FileTime.fromMillis(now1))
-        assertTrue(fileAttrs.lastModifiedTime() >= FileTime.fromMillis(now2))
-        assertTrue(fileAttrs.lastAccessTime() >= FileTime.fromMillis(now3))
+        assertTrue(fileAttrs.creationTime() >= FileTime.fromMillis(now1) &&
+                   dirAttrs.creationTime() <= FileTime.fromMillis(now2))
+        assertTrue(fileAttrs.lastModifiedTime() >= FileTime.fromMillis(now2) &&
+                   dirAttrs.creationTime() <= FileTime.fromMillis(now3))
+        assertTrue(fileAttrs.lastAccessTime() >= FileTime.fromMillis(now3) &&
+                   dirAttrs.creationTime() <= FileTime.fromMillis(System.currentTimeMillis()))
     }
 }

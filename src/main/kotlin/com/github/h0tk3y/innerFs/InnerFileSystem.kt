@@ -1,7 +1,6 @@
 package com.github.h0tk3y.innerFs
 
 import com.github.h0tk3y.innerFs.InnerFileSystem.CreateMode.*
-import kotlinx.coroutines.generate
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
@@ -208,15 +207,19 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
      * Each pairs in the generated sequence is the location of the block in the underlying file and the buffer with
      * the block data, pointing at the block start (including the header).
      */
-    internal fun blocksSequence(firstBlockLocation: Long): Sequence<Located<ByteBuffer>> = generate {
+    internal fun blocksSequence(firstBlockLocation: Long): Sequence<Located<ByteBuffer>> = Sequence {
         var currentBlock = firstBlockLocation
-        do {
+        generateSequence {
+            if (currentBlock == BlockHeader.NO_NEXT_BLOCK)
+                return@generateSequence null
+
             val bytes = readBlock(currentBlock)
             val header = BlockHeader.read(bytes)
             bytes.position(0)
-            yield(Located(currentBlock, bytes))
+            val result = Located(currentBlock, bytes)
             currentBlock = header.nextBlockLocation
-        } while (currentBlock != BlockHeader.NO_NEXT_BLOCK)
+            result
+        }.iterator()
     }
 
     /**

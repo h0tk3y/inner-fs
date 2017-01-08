@@ -1,8 +1,6 @@
 package com.github.h0tk3y.innerFs
 
-/**
- * Created by igushs on 12/30/16.
- */
+import java.util.*
 
 /**
  * Maintains counters associated with [K] items and handles first entry of an item (i.e. when its counter switches

@@ -28,7 +28,7 @@ internal data class BlockHeader(val nextBlockLocation: Long) : ByteStructure {
     }
 
     companion object {
-        const val NO_NEXT_BLOCK = 0L // root block cannot be next block, so it's safe to use 0
+        const val NO_NEXT_BLOCK = -1L
 
         fun read(from: ByteBuffer): BlockHeader {
             val nextBlockLocation = from.getLong()

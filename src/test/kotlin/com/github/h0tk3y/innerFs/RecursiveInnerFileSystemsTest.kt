@@ -11,10 +11,6 @@ import java.nio.file.Paths
 import java.nio.file.StandardOpenOption.CREATE
 import java.nio.file.StandardOpenOption.WRITE
 
-/**
- * Created by igushs on 1/5/17.
- */
-
 @ExtendWith(IfsExternalResource::class)
 class RecursiveInnerFileSystemsTest {
     lateinit var ifs: InnerFileSystem

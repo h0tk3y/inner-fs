@@ -3,10 +3,6 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 
-/**
- * Created by igushs on 12/23/16.
- */
-
 class BlockLocatorTest {
     @Test fun empty() {
         val map = BlockLocator(BlockHeader.NO_NEXT_BLOCK) { throw NotImplementedError() }

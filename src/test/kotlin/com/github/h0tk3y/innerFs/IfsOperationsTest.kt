@@ -1,8 +1,15 @@
 package com.github.h0tk3y.innerFs
 
+import com.github.h0tk3y.innerFs.dsl.div
+import org.junit.jupiter.api.Assertions
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
+import java.nio.ByteBuffer
+import java.nio.file.Files
+import java.nio.file.StandardOpenOption.CREATE
+import java.nio.file.StandardOpenOption.WRITE
+import java.nio.file.attribute.DosFileAttributeView
 
 
 @ExtendWith(IfsExternalResource::class)
@@ -51,5 +58,26 @@ class IfsOperationsTest {
         assertTrue(entries.drop(1).all { !it.entry.exists })
         assertTrue(entries.drop(1).all { it.entry.name == EMPTY_ENTRY_NAME })
         assertTrue(entries.drop(1).all { (it.location - BlockHeader.size) % DirectoryEntry.size == 0L })
+    }
+
+    @Test fun readOnlyFs() {
+        Files.createDirectories(ifs / "a")
+        Files.newByteChannel(ifs / "a" / "1.txt", CREATE, WRITE).use { it.write(ByteBuffer.allocate(123)) }
+
+        val path = ifs.underlyingPath
+        ifs.close()
+        val attrs = Files.getFileAttributeView(path, DosFileAttributeView::class.java)
+        if (attrs != null) {
+            attrs.setReadOnly(true)
+
+            InnerFileSystemProvider().newFileSystem(path).use { newIfs ->
+                Assertions.assertTrue(newIfs.isReadOnly)
+                Assertions.assertTrue(newIfs.fileStores.single().isReadOnly)
+                Assertions.assertTrue(Files.exists(newIfs / "a" / "1.txt"))
+                Assertions.assertEquals(123L, Files.size(newIfs / "a" / "1.txt"))
+            }
+
+            attrs.setReadOnly(false)
+        }
     }
 }

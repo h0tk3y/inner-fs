@@ -90,9 +90,10 @@ class InnerFileSystemProvider : FileSystemProvider() {
         return p.fileNameString.startsWith(".")
     }
 
-    override fun <V : FileAttributeView?> getFileAttributeView(path: Path?, type: Class<V>?, vararg options: LinkOption?): V {
+    override fun <V : FileAttributeView?> getFileAttributeView(path: Path?, type: Class<V>?, vararg options: LinkOption?): V? {
         if (type != BasicFileAttributeView::class.java)
-            throw UnsupportedOperationException()
+            return null
+
         val p = requireInnerFsPath(path?.normalize())
 
         @Suppress("UNCHECKED_CAST")
@@ -129,11 +130,12 @@ class InnerFileSystemProvider : FileSystemProvider() {
         } as V
     }
 
-    override fun <A : BasicFileAttributes?> readAttributes(path: Path?, type: Class<A>?, vararg options: LinkOption?): A {
+    override fun <A : BasicFileAttributes?> readAttributes(path: Path?, type: Class<A>?, vararg options: LinkOption?): A? {
         if (type != BasicFileAttributes::class.java)
-            throw UnsupportedOperationException("Attributes for $type are not supported, use BasicFileAttributes instead")
+            return null
+
         @Suppress("UNCHECKED_CAST")
-        return getFileAttributeView(path, BasicFileAttributeView::class.java).readAttributes() as A
+        return getFileAttributeView(path, BasicFileAttributeView::class.java)?.readAttributes() as A
     }
 
     override fun readAttributes(path: Path?, attributes: String?, vararg options: LinkOption?) =

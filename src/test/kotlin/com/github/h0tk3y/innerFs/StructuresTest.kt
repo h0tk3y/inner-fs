@@ -2,10 +2,6 @@ package com.github.h0tk3y.innerFs
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
-/**
- * Created by igushs on 12/23/16.
- */
-
 class ByteStructuresTest {
     @Test fun blockHeader() {
         val blockHeader = BlockHeader(12345L)

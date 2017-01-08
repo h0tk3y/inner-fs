@@ -6,10 +6,6 @@ import java.net.URI
 import java.nio.file.*
 import kotlin.comparisons.naturalOrder
 
-/**
- * Created by igushs on 12/21/16.
- */
-
 fun requireInnerFsPath(p: Path?): InnerPath =
         requireNotNull(p) as? InnerPath ?: throw IncompatiblePathException(p)
 
@@ -38,7 +34,7 @@ data class InnerPath(val innerFs: InnerFileSystem,
 
     val fileNameString get() = pathSegments.last()
 
-    override fun getName(index: Int): Path = InnerPath(innerFs, listOf(pathSegments[index]))
+    override fun getName(index: Int): InnerPath = InnerPath(innerFs, listOf(pathSegments[index]))
 
     override fun relativize(other: Path?): InnerPath {
         val p = requireInnerFsPath(other)
@@ -48,7 +44,11 @@ data class InnerPath(val innerFs: InnerFileSystem,
         return InnerPath(innerFs, p.pathSegments.drop(commonParts))
     }
 
-    override fun toRealPath(vararg options: LinkOption?): Path = TODO()
+    override fun toRealPath(vararg options: LinkOption?): Path {
+        val result = toAbsolutePath().normalize()
+        result.fileSystem.provider().checkAccess(result)
+        return result
+    }
 
     override fun toAbsolutePath(): InnerPath = if (isAbsolute)
         this else
@@ -60,7 +60,7 @@ data class InnerPath(val innerFs: InnerFileSystem,
         else -> InnerPath(innerFs, pathSegments.dropLast(1))
     }
 
-    override fun getRoot(): Path? = if (isAbsolute)
+    override fun getRoot(): InnerPath? = if (isAbsolute)
         InnerPath(innerFs, listOf(pathSegments[0])) else
         null
 
@@ -111,8 +111,9 @@ data class InnerPath(val innerFs: InnerFileSystem,
     override fun isAbsolute(): Boolean = pathSegments.isNotEmpty() && pathSegments[0].isEmpty()
 
     override fun endsWith(other: Path?): Boolean {
-        val that = requireInnerFsPath(other)
-        return pathSegments.takeLast(that.pathSegments.size) == that.pathSegments
+        if (other !is InnerPath) return false
+        if (other.innerFs != innerFs) return false
+        return pathSegments.takeLast(other.pathSegments.size) == other.pathSegments
     }
 
     override fun endsWith(other: String): Boolean {
@@ -126,8 +127,9 @@ data class InnerPath(val innerFs: InnerFileSystem,
     override fun getNameCount(): Int = pathSegments.size
 
     override fun startsWith(other: Path?): Boolean {
-        val p = requireInnerFsPath(other)
-        return pathSegments.take(p.pathSegments.size) == p.pathSegments
+        if (other !is InnerPath) return false
+        if (other.innerFs != innerFs) return false
+        return pathSegments.take(other.pathSegments.size) == other.pathSegments
     }
 
     override fun startsWith(other: String): Boolean = startsWith(innerFs.getPath(other))

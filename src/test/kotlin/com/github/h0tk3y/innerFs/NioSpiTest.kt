@@ -1,17 +1,14 @@
 package com.github.h0tk3y.innerFs
 
+import com.github.h0tk3y.innerFs.dsl.div
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
 import java.nio.ByteBuffer
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
-import java.nio.file.StandardOpenOption
+import java.nio.file.StandardOpenOption.*
 import java.nio.file.attribute.BasicFileAttributeView
-
-/**
- * Created by igushs on 1/4/17.
- */
 
 @ExtendWith(IfsExternalResource::class)
 class NioSpiTest {
@@ -51,7 +48,7 @@ class NioSpiTest {
         Files.createDirectories(ifs.getPath("/b"))
 
         val path = ifs.getPath("/a/abc.txt")
-        val channel = Files.newByteChannel(path, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)
+        val channel = Files.newByteChannel(path, CREATE_NEW, WRITE)
         channel.write(ByteBuffer.allocate(dataSize).apply {
             (1..dataSize).forEach { put(it.toByte()) }
             position(0)
@@ -61,7 +58,7 @@ class NioSpiTest {
         val targetPath = path.resolveSibling("../b/def.txt")
         Files.move(path, targetPath, StandardCopyOption.ATOMIC_MOVE)
 
-        val targetChannel = Files.newByteChannel(targetPath, StandardOpenOption.READ)
+        val targetChannel = Files.newByteChannel(targetPath, READ)
         val bytes = ByteBuffer.allocate(dataSize)
         targetChannel.read(bytes)
         bytes.position(0)
@@ -92,7 +89,7 @@ class NioSpiTest {
         Files.createDirectories(anotherIfs.getPath("/b"))
 
         val path = ifs.getPath("/a/abc.txt")
-        val channel = Files.newByteChannel(path, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)
+        val channel = Files.newByteChannel(path, CREATE_NEW, WRITE)
         channel.write(ByteBuffer.allocate(dataSize).apply {
             (1..dataSize).forEach { put(it.toByte()) }
             position(0)
@@ -102,7 +99,7 @@ class NioSpiTest {
         val targetPath = anotherIfs.getPath("/b/def.txt")
         Files.move(path, targetPath, StandardCopyOption.ATOMIC_MOVE)
 
-        val targetChannel = Files.newByteChannel(targetPath, StandardOpenOption.READ)
+        val targetChannel = Files.newByteChannel(targetPath, READ)
         val bytes = ByteBuffer.allocate(dataSize)
         targetChannel.read(bytes)
         bytes.position(0)
@@ -123,7 +120,15 @@ class NioSpiTest {
     }
 
     @Test fun fileStore() {
+        val dataSize = 10240
+
+        Files.newByteChannel(ifs / "a.txt", CREATE, WRITE).use { file -> file.write(ByteBuffer.allocate(dataSize)) }
         val fileStore = ifs.fileStores.single()
         assertEquals(ifs.isReadOnly, fileStore.isReadOnly)
+        assertTrue(fileStore.totalSpace >= dataSize)
+        assertTrue(0 <= fileStore.usableSpace && fileStore.usableSpace <= fileStore.totalSpace)
+        assertEquals(0, fileStore.unallocatedSpace)
+        Files.delete(ifs / "a.txt")
+        assertTrue(fileStore.unallocatedSpace >= dataSize)
     }
 }

@@ -6,10 +6,6 @@ import org.junit.jupiter.api.extension.ExtendWith
 import java.nio.file.DirectoryNotEmptyException
 import java.nio.file.Files
 
-/**
- * Created by igushs on 1/2/17.
- */
-
 @ExtendWith(IfsExternalResource::class)
 class DirectoriesTest {
 

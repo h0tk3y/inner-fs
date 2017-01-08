@@ -5,6 +5,7 @@ import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.channels.FileLock
+import java.nio.channels.NonWritableChannelException
 import java.nio.file.*
 import java.nio.file.attribute.UserPrincipalLookupService
 import java.util.concurrent.ConcurrentHashMap
@@ -55,6 +56,8 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
                 underlyingChannel.lock()
             } catch (_: UnsupportedOperationException) {
                 null
+            } catch (_: NonWritableChannelException) {
+                null
             }
             if (createNew)
                 writeRootDirectory()
@@ -76,7 +79,10 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
     override fun getFileStores(): Iterable<FileStore> = listOf(singleFileStore)
 
     override fun getPath(first: String, vararg more: String?) =
-            InnerPath(this, first.split("/") + more.toList().filterNotNull())
+            InnerPath(this,
+                      if (first.isEmpty() && more.isEmpty())
+                          emptyList() else
+                          first.split("/") + more.toList().filterNotNull())
 
     // Currently, all the file systems within a class loader return the same provider because all
     // the instances of `InnerFileSystemProvider` are identical and store no state. This should
@@ -93,7 +99,8 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
         underlyingChannel.close()
     }
 
-    override fun getPathMatcher(syntaxAndPattern: String?): PathMatcher = TODO("not implemented")
+    override fun getPathMatcher(syntaxAndPattern: String?): PathMatcher =
+            throw UnsupportedOperationException("Path matcher is not yet supported for InnerFS")
 
     override fun getRootDirectories(): Iterable<InnerPath> = listOf(InnerPath(this, listOf("")))
 

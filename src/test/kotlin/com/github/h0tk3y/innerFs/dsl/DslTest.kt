@@ -13,10 +13,6 @@ import java.nio.file.StandardOpenOption.CREATE
 import java.nio.file.StandardOpenOption.WRITE
 import java.util.*
 
-/**
- * Created by igushs on 1/5/17.
- */
-
 @ExtendWith(IfsExternalResource::class)
 class DslTest {
     @Test fun dslTree() {

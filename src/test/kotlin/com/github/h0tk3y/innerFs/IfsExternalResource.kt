@@ -9,10 +9,6 @@ import java.util.*
 import kotlin.reflect.KMutableProperty
 import kotlin.reflect.memberProperties
 
-/**
- * Created by igushs on 1/2/17.
- */
-
 internal class IfsExternalResource : BeforeEachCallback, AfterEachCallback {
     private fun ifsProperties(context: TestExtensionContext) = context.testInstance.javaClass.kotlin.memberProperties
             .filterIsInstance<KMutableProperty<*>>()

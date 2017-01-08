@@ -41,7 +41,7 @@ internal class FileDescriptor(val innerFs: InnerFileSystem,
             val now = System.currentTimeMillis()
             directoryEntry = directoryEntry.copy(value = directoryEntry.value.copy(lastAccessTimeMillis = now))
             innerFs.criticalForBlock(parentLocation, write = true) {
-                innerFs.rewriteEntry(parentLocation, directoryEntry.location, directoryEntry.entry)
+                innerFs.rewriteEntry(directoryEntry.location, directoryEntry.entry)
             }
         }
     }
@@ -51,7 +51,7 @@ internal class FileDescriptor(val innerFs: InnerFileSystem,
             val now = System.currentTimeMillis()
             directoryEntry = directoryEntry.copy(value = directoryEntry.value.copy(lastModifiedTimeMillis = now))
             innerFs.criticalForBlock(parentLocation, write = true) {
-                innerFs.rewriteEntry(parentLocation, directoryEntry.location, directoryEntry.entry)
+                innerFs.rewriteEntry(directoryEntry.location, directoryEntry.entry)
             }
         }
     }
@@ -62,9 +62,10 @@ internal class FileDescriptor(val innerFs: InnerFileSystem,
         get() = directoryEntry.entry.size
         set(value) {
             directoryEntry = directoryEntry.copy(value = directoryEntry.entry.copy(size = value))
-            innerFs.rewriteEntry(parentLocation,
-                                 directoryEntry.location,
-                                 directoryEntry.entry)
+            innerFs.criticalForBlock(parentLocation, write = true) {
+                innerFs.rewriteEntry(directoryEntry.location,
+                                     directoryEntry.entry)
+            }
         }
 
     override fun equals(other: Any?): Boolean {

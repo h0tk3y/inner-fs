@@ -94,10 +94,12 @@ class InnerFileSystemProvider : FileSystemProvider() {
         if (type != BasicFileAttributeView::class.java)
             throw UnsupportedOperationException()
         val p = requireInnerFsPath(path?.normalize())
-        val (_, e) = p.innerFs.locateEntry(p) ?: throw NoSuchFileException("$path")
+
         @Suppress("UNCHECKED_CAST")
         return object : BasicFileAttributeView {
             override fun readAttributes(): BasicFileAttributes = object : BasicFileAttributes {
+                val e: DirectoryEntry = p.innerFs.locateEntry(p)?.entry ?: throw NoSuchFileException("$p")
+
                 override fun isOther() = false
                 override fun isDirectory() = e.isDirectory
                 override fun isSymbolicLink() = false
@@ -109,10 +111,21 @@ class InnerFileSystemProvider : FileSystemProvider() {
                 override fun lastAccessTime() = FileTime.fromMillis(if (isDirectory) 0L else e.lastAccessTimeMillis)
             }
 
-            override fun setTimes(lastModifiedTime: FileTime?, lastAccessTime: FileTime?, createTime: FileTime?) =
-                    throw UnsupportedOperationException()
+            override fun setTimes(lastModifiedTime: FileTime?, lastAccessTime: FileTime?, createTime: FileTime?) {
+                p.innerFs.locateEntry(p, write = true) { (location, entry) ->
+                    if (entry.isDirectory) {
+                        require(lastModifiedTime == null) { "Last modified time is not supported for directories" }
+                        require(lastAccessTime == null) { "Last accessed time is not supported for directories" }
+                    }
 
-            override fun name(): String = e.name
+                    val newEntry = entry.copy(createdTimeMillis = createTime?.toMillis() ?: entry.createdTimeMillis,
+                                              lastModifiedTimeMillis = lastModifiedTime?.toMillis() ?: entry.lastModifiedTimeMillis,
+                                              lastAccessTimeMillis = lastAccessTime?.toMillis() ?: entry.lastAccessTimeMillis)
+                    p.innerFs.rewriteEntry(location, newEntry)
+                } ?: throw NoSuchFileException("$p")
+            }
+
+            override fun name(): String = p.normalize().fileNameString
         } as V
     }
 
@@ -143,15 +156,14 @@ class InnerFileSystemProvider : FileSystemProvider() {
         val p = requireInnerFsPath(target?.normalize())
 
         var replaceExisting = false
-        var atomicMove = false
 
         for (o in options) when (o) {
             StandardCopyOption.REPLACE_EXISTING -> replaceExisting = true
-            StandardCopyOption.ATOMIC_MOVE -> atomicMove = true
+            StandardCopyOption.ATOMIC_MOVE -> Unit // ignored, move is always atomic
             else -> throw UnsupportedOperationException("Option $o is not supported")
         }
 
-        s.innerFs.move(s, p, replaceExisting, atomicMove)
+        s.innerFs.move(s, p, replaceExisting)
     }
 
     override fun delete(path: Path?) {

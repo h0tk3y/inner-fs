@@ -12,12 +12,9 @@ import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.StandardOpenOption.CREATE
 import java.nio.file.StandardOpenOption.WRITE
+import java.nio.file.attribute.BasicFileAttributeView
 import java.nio.file.attribute.BasicFileAttributes
 import java.nio.file.attribute.FileTime
-
-/**
- * Created by igushs on 12/29/16.
- */
 
 @ExtendWith(IfsExternalResource::class)
 class FilesTest {
@@ -226,5 +223,21 @@ class FilesTest {
                    dirAttrs.creationTime() <= FileTime.fromMillis(now3))
         assertTrue(fileAttrs.lastAccessTime() >= FileTime.fromMillis(now3) &&
                    dirAttrs.creationTime() <= FileTime.fromMillis(System.currentTimeMillis()))
+    }
+
+    @Test fun timeUpdate() {
+        val file = ifs / "abc.txt"
+        Files.createFile(file)
+        val view = Files.getFileAttributeView(file, BasicFileAttributeView::class.java)
+        view.setTimes(FileTime.fromMillis(123), FileTime.fromMillis(456), FileTime.fromMillis(789))
+        val attrs = view.readAttributes()
+        assertEquals(123L, attrs.lastModifiedTime().toMillis())
+        assertEquals(456L, attrs.lastAccessTime().toMillis())
+        assertEquals(789L, attrs.creationTime().toMillis())
+
+        val newViewAttrs = Files.getFileAttributeView(file, BasicFileAttributeView::class.java).readAttributes()
+        assertEquals(123L, newViewAttrs.lastModifiedTime().toMillis())
+        assertEquals(456L, newViewAttrs.lastAccessTime().toMillis())
+        assertEquals(789L, newViewAttrs.creationTime().toMillis())
     }
 }

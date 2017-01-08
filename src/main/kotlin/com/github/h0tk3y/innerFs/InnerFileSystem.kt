@@ -122,11 +122,10 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
             initializeDirectoryBlock(bytes)
             bytes.position(0)
             writeOut(bytes, ROOT_LOCATION)
-            val (firstEntryLocation, _) = entriesFromBlocksAt(0).first()
+            val (firstEntryLocation, _) = entriesFromBlocksAt(ROOT_LOCATION).first()
             val now = System.currentTimeMillis()
-            rewriteEntry(ROOT_LOCATION, firstEntryLocation,
-                         DirectoryEntry(false, BlockHeader.NO_NEXT_BLOCK, FREE_BLOCKS_ENTRY_FLAG_SIZE,
-                                        now, now, now, "unallocated"))
+            rewriteEntry(firstEntryLocation, DirectoryEntry(false, BlockHeader.NO_NEXT_BLOCK, FREE_BLOCKS_ENTRY_FLAG_SIZE,
+                                                            now, now, now, "unallocated"))
         }
     }
 
@@ -179,17 +178,17 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
     }
 
     internal fun locateEntry(path: InnerPath, startingFromLocation: Long = ROOT_LOCATION) =
-            locateEntry(path, false, startingFromLocation) { it }
+            locateEntry(path, startingFromLocation, false) { it }
 
     /**
-     * Locates and returns a file system entry for the given [path], starting from the givan [startingFromLocation] and
+     * Locates a file system entry for the given [path], starting from the given [startingFromLocation] and
      * then, still holding the lock of the parent directory, calculates the [transform] of the
-     * found [Located] [DirectoryEntry].
-     * Returns null if no entry was found.
+     * found [Located] [DirectoryEntry]. Returns null if no entry was found.
      */
     internal fun <T> locateEntry(path: InnerPath,
+                                 startingFromLocation: Long = ROOT_LOCATION,
                                  write: Boolean = false,
-                                 startingFromLocation: Long = ROOT_LOCATION, transform: (Located<DirectoryEntry>) -> T): T? {
+                                 transform: (entry: Located<DirectoryEntry>) -> T): T? {
         if (path == path.root)
             return null
 
@@ -238,17 +237,14 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
     internal fun entriesFromBlocksAt(firstBlockLocation: Long) = entriesFromBlocks(blocksSequence(firstBlockLocation))
 
     /**
-     * Rewrites a [DirectoryEntry] contained in a directory starting at [directoryLocation] and located at
-     * [entryLocation] with the given [newEntry].
+     * Rewrites a [DirectoryEntry]  located at [entryLocation] with the given [newEntry].
+     * Should be called in a [criticalForBlock] block for the parent directory location.
      */
     internal fun rewriteEntry(
-            directoryLocation: Long,
             entryLocation: Long,
             newEntry: DirectoryEntry) {
-        criticalForBlock(directoryLocation, write = true) {
-            val bytes = newEntry.bytes()
-            writeOut(bytes, entryLocation + bytes.position())
-        }
+        val bytes = newEntry.bytes()
+        writeOut(bytes, entryLocation + bytes.position())
     }
 
     internal fun getFreeBlocks(): Located<DirectoryEntry> =
@@ -261,7 +257,7 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
             val (location, entry) = getFreeBlocks()
             val knownFreeBlock = entry.firstBlockLocation
             val newEntry = entry.copy(firstBlockLocation = blockLocation)
-            rewriteEntry(UNALLOCATED_BLOCKS, location, newEntry)
+            rewriteEntry(location, newEntry)
 
             writeOut(BlockHeader(nextBlockLocation = knownFreeBlock).bytes(), blockLocation)
         }
@@ -294,8 +290,7 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
             // get the next free block to store it in the root entry instead
             val header = BlockHeader.read(buffer)
             val nextFreeBlock = header.nextBlockLocation
-            rewriteEntry(UNALLOCATED_BLOCKS, freeBlocks.location,
-                         freeBlocks.entry.copy(firstBlockLocation = nextFreeBlock))
+            rewriteEntry(freeBlocks.location, freeBlocks.entry.copy(firstBlockLocation = nextFreeBlock))
 
             // then initialize the allocated block
             buffer.position(0)
@@ -314,7 +309,7 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
             val blocksSequence = blocksSequence(directoryFirstBlockLocation)
             val existingEmptySlot = entriesFromBlocks(blocksSequence).find { !it.entry.exists && !it.entry.isFreeBlocksEntry }
             if (existingEmptySlot != null) {
-                rewriteEntry(directoryFirstBlockLocation, existingEmptySlot.location, newEntry)
+                rewriteEntry(existingEmptySlot.location, newEntry)
                 return Located(existingEmptySlot.location, newEntry)
             } else {
                 val allocatedBlock = allocateBlock(initializeDirectoryBlock)
@@ -349,9 +344,10 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
                 .map { InnerPath(this, path.pathSegments + it.entry.name) }
     }
 
-    private fun markEntryDeleted(directoryLocation: Long, entryLocation: Long) {
-        rewriteEntry(directoryLocation, entryLocation, DirectoryEntry(false, BlockHeader.NO_NEXT_BLOCK, -1,
-                                                                      0L, 0L, 0L, EMPTY_ENTRY_NAME))
+    // Should be only called in critical sections for the directory location.
+    private fun markEntryDeleted(entryLocation: Long) {
+        rewriteEntry(entryLocation, DirectoryEntry(false, BlockHeader.NO_NEXT_BLOCK, -1,
+                                                   0L, 0L, 0L, EMPTY_ENTRY_NAME))
     }
 
     fun deleteFile(path: InnerPath) {
@@ -359,26 +355,23 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
         require(path.innerFs == this) { "The path '$path' doesn't belong to this file system" }
         require(path.isAbsolute) { "The path should be absolute." }
         require(path != path.root) { "Root file '/' cannot be deleted" }
-        val parent = path.normalize().parent!!
-        locateBlock(parent, write = true) { parentLocation ->
-            locateEntry(path.fileName, true, parentLocation) { (location, entry) ->
-                criticalForBlock(entry.firstBlockLocation, false) {
-                    synchronized(openFileDescriptors) {
+        locateEntry(path, write = true) { (location, entry) ->
+            criticalForBlock(entry.firstBlockLocation, false) {
+                synchronized(openFileDescriptors) {
 
-                        if (entry.isDirectory) {
-                            val hasEntries = entriesFromBlocksAt(entry.firstBlockLocation).any { (_, v) -> v.exists }
-                            if (hasEntries)
-                                throw DirectoryNotEmptyException("$path")
-                        }
-
-                        if (fileDescriptorByBlock.containsKey(entry.firstBlockLocation))
-                            throw FileIsInUseException(path, "Cannot delete the file")
-                        blocksSequence(entry.firstBlockLocation).forEach { (location, _) -> deallocateBlock(location) }
-                        markEntryDeleted(parentLocation, location)
+                    if (entry.isDirectory) {
+                        val hasEntries = entriesFromBlocksAt(entry.firstBlockLocation).any { (_, v) -> v.exists }
+                        if (hasEntries)
+                            throw DirectoryNotEmptyException("$path")
                     }
+
+                    if (fileDescriptorByBlock.containsKey(entry.firstBlockLocation))
+                        throw FileIsInUseException(path, "Cannot delete the file")
+                    blocksSequence(entry.firstBlockLocation).forEach { (location, _) -> deallocateBlock(location) }
+                    markEntryDeleted(location)
                 }
-            } ?: throw NoSuchFileException("'$path'")
-        } ?: throw NoSuchFileException("$parent", null, "Parent directory '$parent' not found for path '$path'")
+            }
+        } ?: throw NoSuchFileException("'$path'")
     }
 
     fun openFile(path: InnerPath,
@@ -409,7 +402,7 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
                             val block = allocateBlock { initializeDataBlock }
                             actualEntry =
                                     actualEntry.copy(value = actualEntry.entry.copy(firstBlockLocation = block, size = 0))
-                            rewriteEntry(parentLocation, actualEntry.location, actualEntry.entry)
+                            rewriteEntry(actualEntry.location, actualEntry.entry)
                         } else throw FileIsInUseException(path, "Cannot truncate the file")
                     }
                     val fd = fileDescriptorByBlock.getOrPut(fileLocation) {
@@ -442,37 +435,33 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
         }
     }
 
-    fun move(from: InnerPath, to: InnerPath, replaceExisting: Boolean = false, atomically: Boolean = false) {
+    fun move(from: InnerPath, to: InnerPath, replaceExisting: Boolean = false) {
         require(from.isAbsolute)
         require(to.isAbsolute)
 
         if (from.normalize() == to.normalize())
             return
 
-        directoriesOperation(from, to, atomically) {
-            if (Files.isDirectory(from))
+        directoriesOperation(from, to) { fromParent, toParent ->
+            if (locateEntry(from.fileName, fromParent)?.entry?.isDirectory ?: false)
                 throw IOException("Directory $from cannot be moved. Use `Files.walkFileTree` + `copy` instead")
 
             if (to.innerFs == this) {
-                val (sLocation, sEntry) = locateEntry(from) ?: throw NoSuchFileException("$from")
-                val sParentBlock = locateBlock(requireInnerFsPath(from.parent)) ?: throw NoSuchFileException("${from.parent}")
-                val pParentBlock = locateBlock(requireInnerFsPath(to.parent)) ?: throw NoSuchFileException("${to.parent}")
+                val (sLocation, sEntry) = locateEntry(from.fileName, fromParent) ?: throw NoSuchFileException("$from")
                 val resultEntry = sEntry.copy(name = to.fileNameString)
-                val locatedPEntry = locateEntry(to)
+                val locatedPEntry = locateEntry(to, toParent)
                 if (locatedPEntry != null) {
                     if (replaceExisting)
                         throw FileAlreadyExistsException("$to")
                     deleteFile(to)
-                    rewriteEntry(pParentBlock, locatedPEntry.location, resultEntry)
+                    rewriteEntry(locatedPEntry.location, resultEntry)
                 } else {
-                    addEntryToDirectory(pParentBlock, resultEntry)
+                    addEntryToDirectory(toParent, resultEntry)
                 }
-                criticalForBlock(sParentBlock, write = true) {
-                    synchronized(openFileDescriptors) {
-                        if (from.innerFs.fileDescriptorByBlock.containsKey(sEntry.firstBlockLocation))
-                            throw FileIsInUseException(from, "Cannot move the file")
-                        markEntryDeleted(sParentBlock, sLocation)
-                    }
+                synchronized(openFileDescriptors) {
+                    if (from.innerFs.fileDescriptorByBlock.containsKey(sEntry.firstBlockLocation))
+                        throw FileIsInUseException(from, "Cannot move the file")
+                    markEntryDeleted(sLocation)
                 }
             } else {
                 openFile(from, read = true, create = OPEN_OR_FAIL).use { sFile ->
@@ -511,31 +500,27 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
     }
 
     /**
-     * Executes [actions]: if required to be [atomic], acquires locks for parents of [s] and [p]
-     * in a correct order first.
+     * Executes [actions], acquires locks for parents of [s] and [p] in a correct order.
      */
-    private inline fun directoriesOperation(s: InnerPath, p: InnerPath, atomic: Boolean, actions: () -> Unit) {
-        if (atomic) {
-            val sParent = requireInnerFsPath(s.parent?.normalize())
-            val pParent = requireInnerFsPath(p.parent?.normalize())
-            val sParentBlock = s.innerFs.locateBlock(sParent) ?: throw NoSuchFileException("$sParent")
-            val pParentBlock = p.innerFs.locateBlock(pParent) ?: throw NoSuchFileException("$pParent")
-            // To maintain the globally ordered locking, check if one of the paths is an ancestor of the other
-            // and if not, lock the block which has lower number first
-            val outer = when {
-                s < p -> sParentBlock
-                else -> pParentBlock
+    private inline fun directoriesOperation(s: InnerPath, p: InnerPath,
+                                            actions: (fromLocation: Long, toLocation: Long) -> Unit) {
+        val sParent = requireInnerFsPath(s.parent?.normalize())
+        val pParent = requireInnerFsPath(p.parent?.normalize())
+        val sParentBlock = s.innerFs.locateBlock(sParent) ?: throw NoSuchFileException("$sParent")
+        val pParentBlock = p.innerFs.locateBlock(pParent) ?: throw NoSuchFileException("$pParent")
+        // To maintain the globally ordered locking, check if one of the paths is an ancestor of the other
+        // and if not, lock the block which has lower number first
+        val outer = when {
+            s < p -> sParentBlock
+            else -> pParentBlock
+        }
+        val outerFs = if (outer == sParentBlock) s.innerFs else p.innerFs
+        val inner = if (outer == sParentBlock) pParentBlock else sParentBlock
+        val innerFs = if (outerFs == s.innerFs) p.innerFs else s.innerFs
+        outerFs.criticalForBlock(outer, write = true) {
+            innerFs.criticalForBlock(inner, write = true) {
+                actions(sParentBlock, pParentBlock)
             }
-            val outerFs = if (outer == sParentBlock) s.innerFs else p.innerFs
-            val inner = if (outer == sParentBlock) pParentBlock else sParentBlock
-            val innerFs = if (outerFs == s.innerFs) p.innerFs else s.innerFs
-            outerFs.criticalForBlock(outer, write = true) {
-                innerFs.criticalForBlock(inner, write = true) {
-                    actions()
-                }
-            }
-        } else {
-            actions()
         }
     }
 

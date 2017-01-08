@@ -305,7 +305,7 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
         }
     }
 
-    internal fun addEntryToDirectory(directoryFirstBlockLocation: Long, newEntry: DirectoryEntry): Located<DirectoryEntry> {
+    private fun addEntryToDirectory(directoryFirstBlockLocation: Long, newEntry: DirectoryEntry): Located<DirectoryEntry> {
         checkWritable()
         criticalForBlock(directoryFirstBlockLocation, write = true) {
             val blocksSequence = blocksSequence(directoryFirstBlockLocation)

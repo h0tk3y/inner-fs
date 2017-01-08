@@ -7,11 +7,6 @@ import java.nio.file.*
 import java.nio.file.attribute.*
 import java.nio.file.spi.FileSystemProvider
 
-/**
- * Created by igushs on 12/21/16.
- */
-
-
 private val createdFileSystems = mutableMapOf<Path, InnerFileSystem>()
 
 class InnerFileSystemProvider : FileSystemProvider() {

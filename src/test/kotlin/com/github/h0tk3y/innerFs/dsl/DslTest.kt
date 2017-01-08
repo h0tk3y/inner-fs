@@ -1,10 +1,12 @@
 package com.github.h0tk3y.innerFs.dsl
 
+import com.github.h0tk3y.innerFs.IfsExternalResource
+import com.github.h0tk3y.innerFs.InnerFileSystem
 import com.github.h0tk3y.innerFs.InnerPath
-import com.github.h0tk3y.innerFs.tempInnerFileSystem
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.ExtendWith
 import java.nio.ByteBuffer
 import java.nio.file.Files
 import java.nio.file.StandardOpenOption.CREATE
@@ -15,6 +17,7 @@ import java.util.*
  * Created by igushs on 1/5/17.
  */
 
+@ExtendWith(IfsExternalResource::class)
 class DslTest {
     @Test fun dslTree() {
         var pathA: InnerPath? = null
@@ -32,24 +35,26 @@ class DslTest {
                 file("d.txt") { write(ByteBuffer.wrap("Hello".toByteArray())) }
             }
         }
-        try { ifs.use {
-            assertTrue(Files.exists(pathA))
-            assertTrue(Files.exists(pathB))
-            assertTrue(Files.exists(pathC))
-            assertTrue(Files.exists(ifs.getPath("/a/d.txt")))
+        try {
+            ifs.use {
+                assertTrue(Files.exists(pathA))
+                assertTrue(Files.exists(pathB))
+                assertTrue(Files.exists(pathC))
+                assertTrue(Files.exists(ifs.getPath("/a/d.txt")))
 
-            assertTrue(Files.isDirectory(ifs.getPath("/a")))
-            assertTrue(Files.isDirectory(ifs.getPath("/a/b")))
-            assertTrue(Files.isDirectory(ifs.getPath("/a/b/c")))
+                assertTrue(Files.isDirectory(ifs.getPath("/a")))
+                assertTrue(Files.isDirectory(ifs.getPath("/a/b")))
+                assertTrue(Files.isDirectory(ifs.getPath("/a/b/c")))
 
-            assertEquals(0L, Files.size(pathA))
-            assertEquals(123, Files.size(pathB))
-            assertEquals(321, Files.size(pathC))
-            assertEquals("Hello".toByteArray().size.toLong(), Files.size(ifs.getPath("/a/d.txt")))
+                assertEquals(0L, Files.size(pathA))
+                assertEquals(123, Files.size(pathB))
+                assertEquals(321, Files.size(pathC))
+                assertEquals("Hello".toByteArray().size.toLong(), Files.size(ifs.getPath("/a/d.txt")))
 
-            val stringFromFile = String(Files.readAllBytes(ifs.getPath("/a/d.txt")))
-            assertEquals("Hello", stringFromFile)
-        } } finally {
+                val stringFromFile = String(Files.readAllBytes(ifs.getPath("/a/d.txt")))
+                assertEquals("Hello", stringFromFile)
+            }
+        } finally {
             Files.delete(ifs.underlyingPath)
         }
     }
@@ -83,38 +88,38 @@ class DslTest {
         }
     }
 
-    @Test fun workingWithExistingFs() {
-        tempInnerFileSystem().use { ifs ->
-            val dir = ifs / "a" / "b" / "c"
-            Files.createDirectories(dir)
-            Files.newByteChannel(dir / "a.txt", CREATE, WRITE).use { channel ->
-                channel.write(ByteBuffer.wrap("Hello".toByteArray()))
-            }
+    lateinit var ifs: InnerFileSystem
 
-            // now open it with DSL
-            innerFs(ifs.underlyingPath) {
-                directory("a") {
-                    directory("b") {
-                        directory("c") {
-                            file("a.txt") {
-                                assertEquals("Hello".toByteArray().size, size().toInt())
-                                position(size())
-                                write(ByteBuffer.wrap(", world!".toByteArray()))
-                            }
+    @Test fun workingWithExistingFs() {
+        val dir = ifs / "a" / "b" / "c"
+        Files.createDirectories(dir)
+        Files.newByteChannel(dir / "a.txt", CREATE, WRITE).use { channel ->
+            channel.write(ByteBuffer.wrap("Hello".toByteArray()))
+        }
+
+        // now open it with DSL
+        innerFs(ifs.underlyingPath) {
+            directory("a") {
+                directory("b") {
+                    directory("c") {
+                        file("a.txt") {
+                            assertEquals("Hello".toByteArray().size, size().toInt())
+                            position(size())
+                            write(ByteBuffer.wrap(", world!".toByteArray()))
                         }
                     }
                 }
+            }
 
-                file(here / "a" / "b" / "c" / "a.txt") {
-                    assertEquals("Hello, world!".toByteArray().size, size().toInt())
-                    position(size())
-                    write(ByteBuffer.wrap(" Hello, world!".toByteArray()))
-                }
+            file(here / "a" / "b" / "c" / "a.txt") {
+                assertEquals("Hello, world!".toByteArray().size, size().toInt())
+                position(size())
+                write(ByteBuffer.wrap(" Hello, world!".toByteArray()))
+            }
 
-                directory("a") {
-                    file(here / "b" / "c" / "a.txt") {
-                        assertEquals("Hello, world! Hello, world!".toByteArray().size, size().toInt())
-                    }
+            directory("a") {
+                file(here / "b" / "c" / "a.txt") {
+                    assertEquals("Hello, world! Hello, world!".toByteArray().size, size().toInt())
                 }
             }
         }

@@ -16,7 +16,7 @@ internal class BlocksFileChannel(val fileDescriptor: FileDescriptor,
         require(firstBlockLocation != BlockHeader.NO_NEXT_BLOCK)
     }
 
-    private val firstBlockLocation get() = fileDescriptor.directoryEntry.entry.firstBlockLocation
+    private val firstBlockLocation get() = fileDescriptor.fileLocation
     private val innerFs get() = fileDescriptor.innerFs
 
     private var closed = false

@@ -33,4 +33,4 @@ internal class IfsExternalResource : BeforeEachCallback, AfterEachCallback {
 }
 
 private val random = Random()
-internal fun tempInnerFileSystem() = InnerFileSystemProvider().newFileSystem(Paths.get("./test-inner-fs-${random.nextLong()}.ifs"))
+private fun tempInnerFileSystem() = InnerFileSystemProvider().newFileSystem(Paths.get("./test-inner-fs-${random.nextLong()}.ifs"))

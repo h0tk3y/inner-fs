@@ -1,9 +1,5 @@
 package com.github.h0tk3y.innerFs
 
-/**a
- * Created by igushs on 1/1/17.
- */
-
 internal enum class CriticalLevel { READ, WRITE, WRITE_WITH_PARENT }
 
 /**
@@ -16,8 +12,7 @@ internal class FileDescriptor(val innerFs: InnerFileSystem,
                               val parentLocation: Long,
                               locatedEntry: Located<DirectoryEntry>) {
     @Volatile
-    var directoryEntry = locatedEntry
-        private set
+    private var directoryEntry = locatedEntry
 
     val fileLocation: Long
         get() = directoryEntry.entry.firstBlockLocation

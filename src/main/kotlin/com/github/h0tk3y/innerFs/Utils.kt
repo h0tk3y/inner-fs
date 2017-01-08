@@ -3,10 +3,6 @@ import java.nio.ByteBuffer
 import java.nio.channels.ReadableByteChannel
 import java.nio.channels.WritableByteChannel
 
-/**
- * Created by igushs on 12/23/16.
- */
-
 internal fun channelCopy(src: ReadableByteChannel, dest: WritableByteChannel) {
     val buffer = ByteBuffer.allocateDirect(4 * 1024)
     while (src.read(buffer) != -1) {

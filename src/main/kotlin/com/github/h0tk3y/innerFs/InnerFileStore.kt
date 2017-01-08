@@ -5,7 +5,7 @@ import java.nio.file.attribute.BasicFileAttributeView
 import java.nio.file.attribute.FileAttributeView
 import java.nio.file.attribute.FileStoreAttributeView
 
-class InnerFileStore(val innerFs: InnerFileSystem) : FileStore() {
+internal class InnerFileStore(val innerFs: InnerFileSystem) : FileStore() {
     override fun <V : FileStoreAttributeView?> getFileStoreAttributeView(type: Class<V>?): V? = null
 
     override fun getAttribute(attribute: String?): Any = throw UnsupportedOperationException()

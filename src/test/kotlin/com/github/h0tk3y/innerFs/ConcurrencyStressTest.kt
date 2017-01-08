@@ -19,10 +19,10 @@ import kotlin.concurrent.thread
 class ConcurrencyStressTest {
     lateinit var ifs: InnerFileSystem
 
-    @Test fun fileAppend() = assertTimeoutPreemptively(Duration.ofSeconds(10)) {
+    @Test fun fileAppend() = assertTimeoutPreemptively(Duration.ofSeconds(30)) {
         val pieceSize = BLOCK_SIZE * 3
         val nThreads = 3
-        val piecesCountPerThread = 100
+        val piecesCountPerThread = 400
         val finishedLatch = CountDownLatch(nThreads)
 
         val channel = Files.newByteChannel(ifs / "a.txt", CREATE, WRITE, APPEND)
@@ -55,11 +55,11 @@ class ConcurrencyStressTest {
         Assertions.assertEquals((0..nThreads - 1).associate { it to piecesCountPerThread }, counts)
     }
 
-    @Test fun createAndDeleteEntries() = assertTimeoutPreemptively(Duration.ofSeconds(10)) {
+    @Test fun createAndDeleteEntries() = assertTimeoutPreemptively(Duration.ofSeconds(30)) {
         val nThreadsCreate = 3
         val nThreadsDelete = 3
-        val filesToCreatePerThread = 50
-        val filesToDeletePerThread = 30
+        val filesToCreatePerThread = 200
+        val filesToDeletePerThread = 100
         val finishLatch = CountDownLatch(nThreadsCreate + nThreadsDelete)
 
         val files = ArrayBlockingQueue<String>(nThreadsCreate * filesToCreatePerThread)
@@ -90,12 +90,12 @@ class ConcurrencyStressTest {
         Assertions.assertEquals(filesSet, existingFiles)
     }
 
-    @Test fun pingPong() {
+    @Test fun pingPong() = assertTimeoutPreemptively(Duration.ofSeconds(30)) {
         val path1 = ifs / "a.txt"
         val path2 = ifs / "b.txt"
         Files.createFile(path1)
 
-        val iterations = 1000
+        val iterations = 3000
 
         val finishLatch = CountDownLatch(2)
         val otherErrorsHappened = AtomicBoolean()
@@ -131,10 +131,10 @@ class ConcurrencyStressTest {
         assertTrue(Files.exists(fileThatShouldExist))
     }
 
-    @Test fun pullFilesUp() {
+    @Test fun pullFilesUp() = assertTimeoutPreemptively(Duration.ofSeconds(30)) {
         val lowestDirectory = ifs / "a" / "b" / "c"
         Files.createDirectories(lowestDirectory)
-        val filesToCreate = 500
+        val filesToCreate = 1000
         val finishLatch = CountDownLatch(4)
 
         thread {

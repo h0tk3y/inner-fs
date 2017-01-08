@@ -43,6 +43,9 @@ internal data class DirectoryEntry(
         val isDirectory: Boolean,
         val firstBlockLocation: Long,
         val size: Long,
+        val createdTimeMillis: Long,
+        val lastModifiedTimeMillis: Long,
+        val lastAccessTimeMillis: Long,
         val name: String
 ) : ByteStructure {
     val nameBytes get() = name.toByteArray(Charsets.UTF_8)
@@ -61,6 +64,9 @@ internal data class DirectoryEntry(
             putLong(size)
             val nameBytes = nameBytes
             putInt(nameBytes.size)
+            putLong(createdTimeMillis)
+            putLong(lastModifiedTimeMillis)
+            putLong(lastAccessTimeMillis)
             put(nameBytes)
             put(ByteArray(MAX_NAME_SIZE - nameBytes.size))
         }
@@ -72,12 +78,15 @@ internal data class DirectoryEntry(
             val firstBlockLocation = getLong()
             val size = getLong()
             val nameBytesSize = getInt()
+            val createdTime = getLong()
+            val modifiedTime = getLong()
+            val accessedTime = getLong()
             val name = ByteArray(MAX_NAME_SIZE).let { get(it); String(it, 0, nameBytesSize, Charsets.UTF_8) }
 
-            return DirectoryEntry(isDirectory, firstBlockLocation, size, name)
+            return DirectoryEntry(isDirectory, firstBlockLocation, size, createdTime, modifiedTime, accessedTime, name)
         }
 
-        val size by lazy { measureSize(DirectoryEntry(false, 0L, 0L, "")) }
+        val size by lazy { measureSize(DirectoryEntry(false, 0L, 0L, 0L, 0L, 0L, "")) }
     }
 }
 

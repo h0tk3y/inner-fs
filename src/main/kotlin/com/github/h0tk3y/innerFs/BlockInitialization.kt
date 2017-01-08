@@ -5,7 +5,7 @@ import java.nio.ByteBuffer
 internal const val EMPTY_ENTRY_NAME = "---"
 
 internal val initializeDirectoryBlock = { dataBuffer: ByteBuffer ->
-    val emptyEntry = DirectoryEntry(false, BlockHeader.NO_NEXT_BLOCK, -1, EMPTY_ENTRY_NAME)
+    val emptyEntry = DirectoryEntry(false, BlockHeader.NO_NEXT_BLOCK, -1, 0L, 0L, 0L, EMPTY_ENTRY_NAME)
     for (i in 1..entriesInBlock)
         emptyEntry.writeTo(dataBuffer)
 }

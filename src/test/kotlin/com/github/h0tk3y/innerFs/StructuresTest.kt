@@ -18,7 +18,7 @@ class ByteStructuresTest {
     }
 
     @Test fun directoryEntry() {
-        val entry = DirectoryEntry(true, 12345L, 54321L, "someMeaninglessName")
+        val entry = DirectoryEntry(true, 12345L, 54321L, 1L, 2L, 3L, "someMeaninglessName")
         val bytes = entry.bytes()
 
         assertEquals(DirectoryEntry.size, bytes.limit())

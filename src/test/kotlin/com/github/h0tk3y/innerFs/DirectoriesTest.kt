@@ -66,7 +66,7 @@ class DirectoriesTest {
             Files.delete(directory.resolve("${i * 2}"))
         }
         val files2 = Files.newDirectoryStream(directory).map { (it as InnerPath).fileNameString }.toSet()
-        assertEquals((1..nItems / 2).map { "${it * 2 - 1}" }.toSet(), files2)
+        assertEquals((1..(nItems + 1) / 2).map { "${it * 2 - 1}" }.toSet(), files2)
 
         for (i in 1..nItems / 2) {
             Files.createFile(directory.resolve("${i * 2} - new"))

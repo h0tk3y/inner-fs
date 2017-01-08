@@ -107,17 +107,15 @@ class InnerFileSystemProvider : FileSystemProvider() {
                 override fun isDirectory() = e.isDirectory
                 override fun isSymbolicLink() = false
                 override fun isRegularFile() = true
-                override fun creationTime() = FileTime.fromMillis(0L)
+                override fun creationTime() = FileTime.fromMillis(e.createdTimeMillis)
                 override fun size() = e.size
                 override fun fileKey() = null
-                override fun lastModifiedTime() = FileTime.fromMillis(0L)
-                override fun lastAccessTime() = FileTime.fromMillis(0L)
+                override fun lastModifiedTime() = FileTime.fromMillis(if (isDirectory) 0L else e.lastModifiedTimeMillis)
+                override fun lastAccessTime() = FileTime.fromMillis(if (isDirectory) 0L else e.lastAccessTimeMillis)
             }
 
-            override fun setTimes(lastModifiedTime: FileTime?, lastAccessTime: FileTime?, createTime: FileTime?) {
-                if (listOf(lastModifiedTime, lastAccessTime, createTime).any { it != FileTime.fromMillis(0L) })
-                    throw IllegalArgumentException("Non-zero time is not supported")
-            }
+            override fun setTimes(lastModifiedTime: FileTime?, lastAccessTime: FileTime?, createTime: FileTime?) =
+                    throw UnsupportedOperationException()
 
             override fun name(): String = e.name
         } as V
@@ -125,7 +123,7 @@ class InnerFileSystemProvider : FileSystemProvider() {
 
     override fun <A : BasicFileAttributes?> readAttributes(path: Path?, type: Class<A>?, vararg options: LinkOption?): A {
         if (type != BasicFileAttributes::class.java)
-            throw UnsupportedOperationException("Attributes for $type are not supported")
+            throw UnsupportedOperationException("Attributes for $type are not supported, use BasicFileAttributes instead")
         @Suppress("UNCHECKED_CAST")
         return getFileAttributeView(path, BasicFileAttributeView::class.java).readAttributes() as A
     }

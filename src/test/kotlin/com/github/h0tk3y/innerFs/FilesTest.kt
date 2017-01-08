@@ -12,6 +12,8 @@ import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.StandardOpenOption.CREATE
 import java.nio.file.StandardOpenOption.WRITE
+import java.nio.file.attribute.BasicFileAttributes
+import java.nio.file.attribute.FileTime
 
 /**
  * Created by igushs on 12/29/16.
@@ -169,6 +171,12 @@ class FilesTest {
             assertEquals(i.toByte(), dataToCheck.get())
     }
 
+    @Test fun openDirectoryAsFile() {
+        val path = ifs / "a" / "b" / "c"
+        Files.createDirectories(path)
+        assertThrows<NoSuchFileException> { ifs.openFile(path) }
+    }
+
     @Test fun truncateExisting() {
         val f = ifs.openFile(ifs.getPath("/a.txt"))
         f.write(ByteBuffer.allocate(1024))
@@ -184,5 +192,35 @@ class FilesTest {
         val f = ifs.getPath("/.nomedia")
         Files.createFile(f)
         Files.isHidden(f)
+    }
+
+    @Test fun time() {
+        val path = ifs / "a" / "b.txt"
+
+        val now0 = System.currentTimeMillis()
+        Files.createDirectories(path.parent)
+        Thread.sleep(100)
+
+        val now1 = System.currentTimeMillis()
+        val file = Files.newByteChannel(path, CREATE, WRITE)
+        Thread.sleep(100)
+
+        val now2 = System.currentTimeMillis()
+        file.write(ByteBuffer.allocate(123))
+        Thread.sleep(100)
+
+        val now3 = System.currentTimeMillis()
+        file.position(0).read(ByteBuffer.allocate(123))
+        file.close()
+
+        val dirAttrs = Files.readAttributes(path.parent, BasicFileAttributes::class.java)
+        assertTrue(dirAttrs.creationTime() >= FileTime.fromMillis(now0))
+        assertEquals(FileTime.fromMillis(0L), dirAttrs.lastModifiedTime())
+        assertEquals(FileTime.fromMillis(0L), dirAttrs.lastAccessTime())
+
+        val fileAttrs = Files.readAttributes(path, BasicFileAttributes::class.java)
+        assertTrue(fileAttrs.creationTime() >= FileTime.fromMillis(now1))
+        assertTrue(fileAttrs.lastModifiedTime() >= FileTime.fromMillis(now2))
+        assertTrue(fileAttrs.lastAccessTime() >= FileTime.fromMillis(now3))
     }
 }

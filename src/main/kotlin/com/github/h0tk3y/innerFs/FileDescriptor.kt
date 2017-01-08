@@ -1,6 +1,6 @@
 package com.github.h0tk3y.innerFs
 
-/**
+/**a
  * Created by igushs on 1/1/17.
  */
 
@@ -22,13 +22,43 @@ internal class FileDescriptor(val innerFs: InnerFileSystem,
     val fileLocation: Long
         get() = directoryEntry.entry.firstBlockLocation
 
-    internal inline fun <T> critical(criticalLevel: CriticalLevel, action: () -> T) = when (criticalLevel) {
-        CriticalLevel.READ -> innerFs.criticalForBlock(fileLocation, false, action)
-        CriticalLevel.WRITE -> innerFs.criticalForBlock(fileLocation, true, action)
-        CriticalLevel.WRITE_WITH_PARENT ->
-            innerFs.criticalForBlock(parentLocation, true) {
-                innerFs.criticalForBlock(fileLocation, true, action)
+    internal inline fun <T> operation(criticalLevel: CriticalLevel, action: () -> T): T {
+        try {
+            val result = when (criticalLevel) {
+                CriticalLevel.READ -> innerFs.criticalForBlock(fileLocation, false, action)
+                CriticalLevel.WRITE -> innerFs.criticalForBlock(fileLocation, true, action)
+                CriticalLevel.WRITE_WITH_PARENT ->
+                    innerFs.criticalForBlock(parentLocation, true) {
+                        innerFs.criticalForBlock(fileLocation, true, action)
+                    }
             }
+            return result
+        } finally {
+            when (criticalLevel) {
+                CriticalLevel.READ -> updateAccessTime()
+                CriticalLevel.WRITE, CriticalLevel.WRITE_WITH_PARENT -> updateModifiedTime()
+            }
+        }
+    }
+
+    private fun updateAccessTime() {
+        if (!innerFs.isReadOnly) {
+            val now = System.currentTimeMillis()
+            directoryEntry = directoryEntry.copy(value = directoryEntry.value.copy(lastAccessTimeMillis = now))
+            innerFs.criticalForBlock(parentLocation, write = true) {
+                innerFs.rewriteEntry(parentLocation, directoryEntry.location, directoryEntry.entry)
+            }
+        }
+    }
+
+    private fun updateModifiedTime() {
+        if (!innerFs.isReadOnly) {
+            val now = System.currentTimeMillis()
+            directoryEntry = directoryEntry.copy(value = directoryEntry.value.copy(lastModifiedTimeMillis = now))
+            innerFs.criticalForBlock(parentLocation, write = true) {
+                innerFs.rewriteEntry(parentLocation, directoryEntry.location, directoryEntry.entry)
+            }
+        }
     }
 
     val blockLocator = BlockLocator(initialBlockLocation = fileLocation) { BlockHeader.read(innerFs.readBlock(it)) }
@@ -37,6 +67,9 @@ internal class FileDescriptor(val innerFs: InnerFileSystem,
         get() = directoryEntry.entry.size
         set(value) {
             directoryEntry = directoryEntry.copy(value = directoryEntry.entry.copy(size = value))
+            innerFs.rewriteEntry(parentLocation,
+                                 directoryEntry.location,
+                                 directoryEntry.entry)
         }
 
     override fun equals(other: Any?): Boolean {

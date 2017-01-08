@@ -124,8 +124,10 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
             bytes.position(0)
             writeOut(bytes, ROOT_LOCATION)
             val (firstEntryLocation, _) = entriesFromBlocksAt(0).first()
-            rewriteEntry(0, firstEntryLocation,
-                         DirectoryEntry(false, BlockHeader.NO_NEXT_BLOCK, FREE_BLOCKS_ENTRY_FLAG_SIZE, "unallocated"))
+            val now = System.currentTimeMillis()
+            rewriteEntry(ROOT_LOCATION, firstEntryLocation,
+                         DirectoryEntry(false, BlockHeader.NO_NEXT_BLOCK, FREE_BLOCKS_ENTRY_FLAG_SIZE,
+                                        now, now, now, "unallocated"))
         }
     }
 
@@ -256,7 +258,7 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
             val (location, entry) = getFreeBlocks()
             val knownFreeBlock = entry.firstBlockLocation
             val newEntry = entry.copy(firstBlockLocation = blockLocation)
-            rewriteEntry(ROOT_LOCATION, location, newEntry)
+            rewriteEntry(UNALLOCATED_BLOCKS, location, newEntry)
 
             writeOut(BlockHeader(nextBlockLocation = knownFreeBlock).bytes(), blockLocation)
         }
@@ -345,7 +347,8 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
     }
 
     private fun markEntryDeleted(directoryLocation: Long, entryLocation: Long) {
-        rewriteEntry(directoryLocation, entryLocation, DirectoryEntry(false, BlockHeader.NO_NEXT_BLOCK, -1, EMPTY_ENTRY_NAME))
+        rewriteEntry(directoryLocation, entryLocation, DirectoryEntry(false, BlockHeader.NO_NEXT_BLOCK, -1,
+                                                                      0L, 0L, 0L, EMPTY_ENTRY_NAME))
     }
 
     fun deleteFile(path: InnerPath) {
@@ -424,7 +427,9 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
 
             val dataBlock = allocateBlock(initializeDataBlock)
             synchronized(openFileDescriptors) {
-                val directoryEntry = DirectoryEntry(false, dataBlock, ROOT_LOCATION, path.pathSegments.last())
+                val now = System.currentTimeMillis()
+                val directoryEntry = DirectoryEntry(false, dataBlock, ROOT_LOCATION,
+                                                    now, now, now, path.pathSegments.last())
                 val e = addEntryToDirectory(parentLocation, directoryEntry)
                 val fd = FileDescriptor(this, parentLocation, e)
                 fd.openOne()
@@ -552,7 +557,8 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
                     throw FileAlreadyExistsException("$path") else
                     return
             val dataBlock = allocateBlock(initializeDirectoryBlock)
-            addEntryToDirectory(parentBlock, DirectoryEntry(true, dataBlock, 0L, path.fileNameString))
+            val now = System.currentTimeMillis()
+            addEntryToDirectory(parentBlock, DirectoryEntry(true, dataBlock, 0L, now, now, now, path.fileNameString))
         }
     }
 }

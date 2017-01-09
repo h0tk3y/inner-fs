@@ -122,7 +122,7 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
     }
 
     private fun writeRootDirectory() {
-        criticalForBlock(0, write = true) {
+        criticalForBlock(ROOT_LOCATION, write = true) {
             check(underlyingChannel.size() == 0L) { "This is only done in the init phase." }
             val bytes = ByteBuffer.allocateDirect(BLOCK_SIZE)
             BlockHeader(BlockHeader.NO_NEXT_BLOCK).writeTo(bytes)
@@ -310,20 +310,19 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
         }
     }
 
+    // Should be called with lock on the [directoryFirstBlockLocation].
     private fun addEntryToDirectory(directoryFirstBlockLocation: Long, newEntry: DirectoryEntry): Located<DirectoryEntry> {
         checkWritable()
-        criticalForBlock(directoryFirstBlockLocation, write = true) {
-            val blocksSequence = blocksSequence(directoryFirstBlockLocation)
-            val existingEmptySlot = entriesFromBlocks(blocksSequence).find { !it.entry.exists && !it.entry.isFreeBlocksEntry }
-            if (existingEmptySlot != null) {
-                rewriteEntry(existingEmptySlot.location, newEntry)
-                return Located(existingEmptySlot.location, newEntry)
-            } else {
-                val allocatedBlock = allocateBlock(initializeDirectoryBlock)
-                val (lastBlockLocation, _) = blocksSequence.last()
-                setBlockAsNext(lastBlockLocation, allocatedBlock)
-                return addEntryToDirectory(directoryFirstBlockLocation, newEntry)
-            }
+        val blocksSequence = blocksSequence(directoryFirstBlockLocation)
+        val existingEmptySlot = entriesFromBlocks(blocksSequence).find { !it.entry.exists && !it.entry.isFreeBlocksEntry }
+        if (existingEmptySlot != null) {
+            rewriteEntry(existingEmptySlot.location, newEntry)
+            return Located(existingEmptySlot.location, newEntry)
+        } else {
+            val allocatedBlock = allocateBlock(initializeDirectoryBlock)
+            val (lastBlockLocation, _) = blocksSequence.last()
+            setBlockAsNext(lastBlockLocation, allocatedBlock)
+            return addEntryToDirectory(directoryFirstBlockLocation, newEntry)
         }
     }
 

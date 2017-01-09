@@ -17,22 +17,27 @@ internal class FileDescriptor(val innerFs: InnerFileSystem,
     val fileLocation: Long
         get() = directoryEntry.entry.firstBlockLocation
 
-    internal inline fun <T> operation(criticalLevel: CriticalLevel, action: () -> T): T {
+    private inline fun <T> withTimeUpdate(criticalLevel: CriticalLevel, action: () -> T): T {
         try {
-            val result = when (criticalLevel) {
-                CriticalLevel.READ -> innerFs.criticalForBlock(fileLocation, false, action)
-                CriticalLevel.WRITE -> innerFs.criticalForBlock(fileLocation, true, action)
-                CriticalLevel.WRITE_WITH_PARENT ->
-                    innerFs.criticalForBlock(parentLocation, true) {
-                        innerFs.criticalForBlock(fileLocation, true, action)
-                    }
-            }
-            return result
+            return action()
         } finally {
             when (criticalLevel) {
                 CriticalLevel.READ -> updateAccessTime()
                 CriticalLevel.WRITE, CriticalLevel.WRITE_WITH_PARENT -> updateModifiedTime()
             }
+        }
+    }
+
+    internal inline fun <T> operation(criticalLevel: CriticalLevel, action: () -> T): T {
+        return when (criticalLevel) {
+            CriticalLevel.READ -> innerFs.criticalForBlock(fileLocation, false) { withTimeUpdate(criticalLevel, action) }
+            CriticalLevel.WRITE -> innerFs.criticalForBlock(fileLocation, true) { withTimeUpdate(criticalLevel, action) }
+            CriticalLevel.WRITE_WITH_PARENT ->
+                innerFs.criticalForBlock(parentLocation, true) {
+                    innerFs.criticalForBlock(fileLocation, true) {
+                        withTimeUpdate(criticalLevel, action)
+                    }
+                }
         }
     }
 

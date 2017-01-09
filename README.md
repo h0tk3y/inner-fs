@@ -1,6 +1,24 @@
 # InnerFS
-A basic implementation of an in-file file system with Java NIO file system interface in Kotlin.
+A basic implementation of an in-file file system with a Java NIO file system interface, written in Kotlin.
 
+[![](https://img.shields.io/badge/kotlin-1.1--M04-blue.svg)](http://kotlinlang.org/) [![](https://jitpack.io/v/h0tk3y/inner-fs.svg)](https://jitpack.io/#h0tk3y/inner-fs) 
+
+## How to use
+
+InnerFS is currently built against and compatible with Kotlin 1.1-M04, and your project should use the same Kotlin version for compatibility.
+
+Gradle dependency: 
+
+    repositories {
+        ...
+        maven { url 'https://jitpack.io' }
+    }
+
+    dependencies {
+        ...
+        compile 'com.github.h0tk3y:inner-fs:0.1'
+    }
+    
 ## Design
 
 The design is quite simple and straightforward: all the data is arranged in *blocks*, and there's even no 
@@ -86,12 +104,12 @@ As a alternative and a simpler way of working with InnerFS, you can use some of 
 
 Also, for a simpler way of composing InnerFS paths for `Files` operations, please see the *DSL* section.
 
+Feel free to see the tests for advanced usage examples.
 
 ## Thread safety
 
 The approach to safe concurrent operations that InnerFS takes is separate locks for blocks corresponding to the file system objects. 
 For simplicity, only the first block of a file or a directory is locked, that is, such a block represents the whole file or directory, so we can rather call it the file system objects locking.
- 
  
 The operations lock the blocks either for *read* or for *write* with the well-known semantics (reads are done concurrently with other reads; writes lock the resource exclusively). Here are some statements about the locks:
 
@@ -167,12 +185,14 @@ As many things in Kotlin, InnerFS comes with a DSL. It consists of two parts:
         Files.createDirectories(dir)
         val file = dir / "1.txt"
 
-## Unsupported / TODO
+## Unsupported / Further work
 
 * File system watching with `WatchService`s has not been implemented yet.
 
-* Path matchers are not supported yet, too.
+* Path matchers are not supported yet.
 
-* Directory entries are quite big (~301 byte) and are allocated with iteration through the whole directory to find a vacant place. This can be optimized.  
+* `FileChannel` locks are not supported for the InnerFS file channels. This can be implemented by mapping the range locks to (possibly, multiple) underlying blocks locks.
 
 * File attributes are currently supported in a limited way (only operations with `BasicFileAttributes` and `BasicFileAttributeView` are supported, but not the named attributes). 
+
+* Directory entries are quite big (~301 byte) and are allocated with iteration through the whole directory to find a vacant place. This can be optimized. 

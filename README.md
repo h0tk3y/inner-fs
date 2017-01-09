@@ -16,7 +16,7 @@ Gradle dependency:
 
     dependencies {
         ...
-        compile 'com.github.h0tk3y:inner-fs:0.1'
+        compile 'com.github.h0tk3y:inner-fs:0.1-1'
     }
     
 ## Design

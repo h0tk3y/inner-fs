@@ -357,7 +357,7 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
                                                    0L, 0L, 0L, EMPTY_ENTRY_NAME))
     }
 
-    fun deleteFile(path: InnerPath) {
+    fun delete(path: InnerPath) {
         checkWritable()
         require(path.innerFs == this) { "The path '$path' doesn't belong to this file system" }
         require(path.isAbsolute) { "The path should be absolute." }
@@ -460,7 +460,7 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
                 if (locatedPEntry != null) {
                     if (replaceExisting)
                         throw FileAlreadyExistsException("$to")
-                    deleteFile(to)
+                    delete(to)
                     rewriteEntry(locatedPEntry.location, resultEntry)
                 } else {
                     addEntryToDirectory(toParent, resultEntry)

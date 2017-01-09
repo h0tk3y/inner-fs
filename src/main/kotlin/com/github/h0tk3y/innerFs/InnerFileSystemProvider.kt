@@ -170,7 +170,7 @@ class InnerFileSystemProvider : FileSystemProvider() {
 
     override fun delete(path: Path?) {
         val p = requireInnerFsPath(path)
-        p.innerFs.deleteFile(p)
+        p.innerFs.delete(p)
     }
 
     override fun newDirectoryStream(dir: Path?, filter: DirectoryStream.Filter<in Path>): DirectoryStream<Path> {

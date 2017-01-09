@@ -1,10 +1,10 @@
 # InnerFS
-A basic implementation of an in-file file system with Java NIO file system interface in Kotlin. **Work in progress**
+A basic implementation of an in-file file system with Java NIO file system interface in Kotlin.
 
 ## Design
 
 The design is quite simple and straightforward: all the data is arranged in *blocks*, and there's even no 
-special *master* or *root* records or anything similar to what you can see in popular file systems.
+special *master* or *root* records or anything redundant for a simple file system.
 
 Blocks form linked lists: each block points to the next block (if any) of the file or directory which it belongs to, 
 this *next block location* is stored inside the block's *header* (in its beginning). The header is followed by the *data*.
@@ -51,7 +51,7 @@ list and, only if there are none, new blocks are appended to the end of the unde
 
 InnerFS implements the Java NIO2 File System SPI and thus operates with the generally used `Path` and `Channel`. Most of the operations
 from the `Files` utils can be applied to InnerFS, too; the `SeekableByteChannel`s and `FileChannel`s provided by InnerFS are interoperable
-with all the rest of Java NIO.
+with most of the other Java NIO.
 
 The URIs of InnerFS paths have the following form:
 
@@ -69,22 +69,44 @@ from an instance of `InnerFileSystemProvider` or even through `Paths.get(...)`. 
     // that's it, use it:
     Files.createDirectories(ifs.getPath("/a/b/c"))
     val channel = Files.newByteChannel(ifs.getPath("/a/b/c/1.txt"), CREATE, WRITE)
+     
+As a alternative and a simpler way of working with InnerFS, you can use some of its methods directly, without using the NIO `Files` API. These methods are:
+
+* `openFile(path, read = true, write = true, append = false, truncate = false, create = CREATE_OR_OPEN)`
+
+* `createDirectory(path, failIfExists = true, createMissingDirectories = false)`
+                       
+* `delete(path)`
+
+* `directorySequence(path)` (instead of `Files.newDirectoryStream(path)`)
+
+* `move(from, to, replaceExisting = false)`
+
+* `copy(from, to, replaceExisting = false)`
+
+Also, for a simpler way of composing InnerFS paths for `Files` operations, please see the *DSL* section.
+
 
 ## Thread safety
 
-The approach to safe concurrent operations that InnerFS takes is separate locks for blocks corresponding to the file system objects. For simplicity, only the first block of a file or a directory is locked, that is, such a block represents the whole file or directory. The operations lock the blocks either for *read* or for *write* with the well-known semantics (reads are done concurrently with other reads; writes lock the resource exclusively). Here are some statements about the locks:
+The approach to safe concurrent operations that InnerFS takes is separate locks for blocks corresponding to the file system objects. 
+For simplicity, only the first block of a file or a directory is locked, that is, such a block represents the whole file or directory, so we can rather call it the file system objects locking.
+ 
+ 
+The operations lock the blocks either for *read* or for *write* with the well-known semantics (reads are done concurrently with other reads; writes lock the resource exclusively). Here are some statements about the locks:
 
 * `FileChannel` read operations take only *read* lock of the file.
 * `FileChannel` write operations take the *write* lock of the file and, if its size can change during the operation, the file's parent directory *write* lock.
 * `allocateBlock` and `deallocateBlock` internal operations take *write* lock of the special `UNALLOCATED_BLOCKS` block, not the root block. This is done to avoid the lock ordering interference (see below) with the other operations.
-* `openFile` (which creates files as well) takes *write* lock of the parent directory.
-* `deleteFile` takes *write* locks of both parent directory and the file itself. Also, deleting and opening/creating files are atomic operations with respect to each other.
-* locating a path is not atomic on the whole, but each of the steps into the directories along the path is; a deleted file will never be located: a locating step and deleting the file both take the locks on the parent directory, and, what's equally important, a non-empty directory cannot be deleted. However, renaming or moving a directory can interfere with the locating operation, in this case it can end up finding a file by its old path.
-* `move` operation with `ATOMIC_MOVE` option first take the two *write* locks of the source and target parent directories and then performs the move, so that no other operation can be performed which involve the two parent directories.
+* `openFile` (which creates files as well) takes *write* lock of the parent directory, and also atomically creates a file descriptor.
+* `delete` takes *write* locks of both parent directory and the file itself. Deleting and opening/creating files are atomic operations with respect to each other.
+* locating a path is not atomic on the whole, but each of the steps into the directories along the path is; a deleted file will never be located: a locating step and deleting the file both take the locks on the parent directory, and, what's equally important, a non-empty directory cannot be deleted. 
+* `move` operation first take the two *write* locks of the source and target parent directories and then performs the move, so that no other operation can be performed which involve the two parent directories.
+
+Apart from the file system objects, there is a `openFileDescriptors` lock that protects concurrent operations with the file descriptors.
 
 To avoid deadlocks, InnerFS uses locks ordering. The imposed order is based on the paths comparing. The paths are 
 compared lexicographically as lists of *path segments*, for example, `/abc/def` < `/abc/def/ghi`, and `/abc/def` < `/abc/xyz`.
-This implies that
 
 * If block *a* represents a parent or an ancestor directory of file system entry *b*, then *a* cannot be locked while 
 *b* is already locked. The relation *'represents a parent or an ancestor'* can change for two blocks *a* and *b* over 
@@ -120,7 +142,7 @@ An example locks ordering hierarchy for a file system (the arrows that come from
 
 As many things in Kotlin, InnerFS comes with a DSL. It consists of two parts:
 
-* declarative builder of a new InnerFS:
+* declarative builder of a new InnerFS or accessing an existing one:
 
         var fileForLaterUse: Path? = null
         
@@ -144,3 +166,13 @@ As many things in Kotlin, InnerFS comes with a DSL. It consists of two parts:
         val dir = ifs / "a" / "b" / "c"
         Files.createDirectories(dir)
         val file = dir / "1.txt"
+
+## Unsupported / TODO
+
+* File system watching with `WatchService`s has not been implemented yet.
+
+* Path matchers are not supported yet, too.
+
+* Directory entries are quite big (~301 byte) and are allocated with iteration through the whole directory to find a vacant place. This can be optimized.  
+
+* File attributes are currently supported in a limited way (only operations with `BasicFileAttributes` and `BasicFileAttributeView` are supported, but not the named attributes). 

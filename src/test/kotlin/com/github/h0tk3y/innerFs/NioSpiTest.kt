@@ -23,7 +23,7 @@ class NioSpiTest {
 
         assertTrue(Files.exists(ifs.getPath("/abc.txt")))
 
-        ifs.deleteFile(ifs.getPath("/abc.txt"))
+        ifs.delete(ifs.getPath("/abc.txt"))
 
         assertFalse(Files.exists(ifs.getPath("/abc.txt")))
     }

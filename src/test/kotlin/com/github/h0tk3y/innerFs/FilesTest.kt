@@ -72,7 +72,7 @@ class FilesTest {
         val bytes = ByteBuffer.allocate(123)
         f.write(bytes)
         f.close()
-        ifs.deleteFile(ifs.getPath("/a.txt"))
+        ifs.delete(ifs.getPath("/a.txt"))
 
         assertThrows<NoSuchFileException> {
             ifs.openFile(ifs.getPath("/a.txt"), read = true, write = true, create = OPEN_OR_FAIL, append = false)
@@ -83,7 +83,7 @@ class FilesTest {
         val f = ifs.openFile(ifs.getPath("/a.txt"), read = true, write = true, create = CREATE_OR_OPEN, append = false)
 
         assertThrows<FileIsInUseException> {
-            ifs.deleteFile(ifs.getPath("/a.txt"))
+            ifs.delete(ifs.getPath("/a.txt"))
         }
 
         f.close()

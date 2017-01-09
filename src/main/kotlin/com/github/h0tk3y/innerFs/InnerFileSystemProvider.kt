@@ -114,15 +114,17 @@ class InnerFileSystemProvider : FileSystemProvider() {
 
             override fun setTimes(lastModifiedTime: FileTime?, lastAccessTime: FileTime?, createTime: FileTime?) {
                 p.innerFs.locateEntry(p, write = true) { (location, entry) ->
-                    if (entry.isDirectory) {
-                        require(lastModifiedTime == null) { "Last modified time is not supported for directories" }
-                        require(lastAccessTime == null) { "Last accessed time is not supported for directories" }
-                    }
+                    p.innerFs.criticalForBlock(entry.firstBlockLocation, write = true) {
+                        if (entry.isDirectory) {
+                            require(lastModifiedTime == null) { "Last modified time is not supported for directories" }
+                            require(lastAccessTime == null) { "Last accessed time is not supported for directories" }
+                        }
 
-                    val newEntry = entry.copy(createdTimeMillis = createTime?.toMillis() ?: entry.createdTimeMillis,
-                                              lastModifiedTimeMillis = lastModifiedTime?.toMillis() ?: entry.lastModifiedTimeMillis,
-                                              lastAccessTimeMillis = lastAccessTime?.toMillis() ?: entry.lastAccessTimeMillis)
-                    p.innerFs.rewriteEntry(location, newEntry)
+                        val newEntry = entry.copy(createdTimeMillis = createTime?.toMillis() ?: entry.createdTimeMillis,
+                                                  lastModifiedTimeMillis = lastModifiedTime?.toMillis() ?: entry.lastModifiedTimeMillis,
+                                                  lastAccessTimeMillis = lastAccessTime?.toMillis() ?: entry.lastAccessTimeMillis)
+                        p.innerFs.rewriteEntry(location, newEntry)
+                    }
                 } ?: throw NoSuchFileException("$p")
             }
 

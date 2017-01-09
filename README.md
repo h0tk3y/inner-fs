@@ -114,7 +114,8 @@ For simplicity, only the first block of a file or a directory is locked, that is
 The operations lock the blocks either for *read* or for *write* with the well-known semantics (reads are done concurrently with other reads; writes lock the resource exclusively). Here are some statements about the locks:
 
 * `FileChannel` read operations take only *read* lock of the file.
-* `FileChannel` write operations take the *write* lock of the file and, if its size can change during the operation, the file's parent directory *write* lock.
+* `FileChannel` write operations take the *write* lock of the file, but also rewrite its directory entry in the parent directory. 
+ This is safe, because if the file is open, the entry cannot be removed, and it is enough to make all the changes to the entry under the file's lock.
 * `allocateBlock` and `deallocateBlock` internal operations take *write* lock of the special `UNALLOCATED_BLOCKS` block, not the root block. This is done to avoid the lock ordering interference (see below) with the other operations.
 * `openFile` (which creates files as well) takes *write* lock of the parent directory, and also atomically creates a file descriptor.
 * `delete` takes *write* locks of both parent directory and the file itself. Deleting and opening/creating files are atomic operations with respect to each other.

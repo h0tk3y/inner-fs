@@ -1,6 +1,5 @@
 package com.github.h0tk3y.innerFs
 
-import com.github.h0tk3y.innerFs.CriticalLevel.*
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.MappedByteBuffer
@@ -25,15 +24,6 @@ internal class BlocksFileChannel(val fileDescriptor: FileDescriptor,
         if (!fileDescriptor.innerFs.isOpen) throw IllegalStateException("The file system has been closed")
         if (closed) throw IllegalStateException("The channel has been closed")
     }
-
-    /**
-     * Determine if the write operation can rewrite the parent directory entry.
-     * If it can, we have to lock the parent directory as well.
-     */
-    private fun writeLevel(dataSize: Int, position: Long = position()) =
-            if (dataSize > size() - position)
-                WRITE_WITH_PARENT else
-                WRITE
 
     private fun checkReadable() {
         checkNotClosed()
@@ -97,7 +87,7 @@ internal class BlocksFileChannel(val fileDescriptor: FileDescriptor,
     }
 
     override fun write(src: ByteBuffer): Int {
-        fileDescriptor.operation(writeLevel(src.remaining())) {
+        fileDescriptor.operation(write = true) {
             if (append)
                 position(fileDescriptor.size)
             val result = writeBuffer(src, currentPosition.get())
@@ -107,7 +97,7 @@ internal class BlocksFileChannel(val fileDescriptor: FileDescriptor,
     }
 
     override fun write(srcs: Array<out ByteBuffer>, offset: Int, length: Int): Long {
-        fileDescriptor.operation(writeLevel(srcs.sumBy { it.remaining() })) {
+        fileDescriptor.operation(write = true) {
             if (append)
                 position(fileDescriptor.size)
             return srcs.drop(offset).take(length).sumByLong { write(it).toLong() }
@@ -115,7 +105,7 @@ internal class BlocksFileChannel(val fileDescriptor: FileDescriptor,
     }
 
     override fun write(src: ByteBuffer, position: Long): Int =
-            fileDescriptor.operation(writeLevel(src.remaining(), position)) { writeBuffer(src, position) }
+            fileDescriptor.operation(write = true) { writeBuffer(src, position) }
 
     override fun force(metaData: Boolean) {
         checkNotClosed()
@@ -150,9 +140,7 @@ internal class BlocksFileChannel(val fileDescriptor: FileDescriptor,
 
     override fun transferTo(position: Long, count: Long, target: WritableByteChannel): Long {
         val intCount = count.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-        return fileDescriptor.operation(if (target is BlocksFileChannel && target.fileDescriptor == fileDescriptor)
-                                           writeLevel(intCount) else
-                                           READ) {
+        return fileDescriptor.operation(write = target is BlocksFileChannel && target.fileDescriptor == fileDescriptor) {
             val buffer = ByteBuffer.allocate(intCount)
             read(buffer, position)
             buffer.flip()
@@ -189,24 +177,24 @@ internal class BlocksFileChannel(val fileDescriptor: FileDescriptor,
     }
 
     override fun read(dst: ByteBuffer): Int {
-        fileDescriptor.operation(READ) {
+        fileDescriptor.operation(write = false) {
             val result = readBuffer(dst, currentPosition.get())
             val newPosition = currentPosition.addAndGet(result.toLong())
             return if (result == 0 && newPosition == size()) -1 else result
         }
     }
 
-    override fun read(dsts: Array<out ByteBuffer>, offset: Int, length: Int): Long = fileDescriptor.operation(READ) {
+    override fun read(dsts: Array<out ByteBuffer>, offset: Int, length: Int): Long = fileDescriptor.operation(write = false) {
         dsts.drop(offset).take(length).sumByLong { read(it).toLong() }
     }
 
-    override fun read(dst: ByteBuffer, position: Long): Int = fileDescriptor.operation(READ) {
+    override fun read(dst: ByteBuffer, position: Long): Int = fileDescriptor.operation(write = false) {
         readBuffer(dst, position)
     }
 
     override fun transferFrom(src: ReadableByteChannel, position: Long, count: Long): Long {
         val bytes = count.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-        fileDescriptor.operation(writeLevel(bytes)) {
+        fileDescriptor.operation(write = true) {
             val buffer = ByteBuffer.allocate(bytes)
             src.read(buffer)
             buffer.flip()

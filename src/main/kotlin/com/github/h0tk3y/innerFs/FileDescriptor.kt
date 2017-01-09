@@ -1,7 +1,5 @@
 package com.github.h0tk3y.innerFs
 
-internal enum class CriticalLevel { READ, WRITE, WRITE_WITH_PARENT }
-
 /**
  * In-memory structure for open files of an [innerFs]. A single file should have only one
  * instance of FileDescriptor, and the users of that file exchange the file details update (e.g. its size) through
@@ -17,37 +15,24 @@ internal class FileDescriptor(val innerFs: InnerFileSystem,
     val fileLocation: Long
         get() = directoryEntry.entry.firstBlockLocation
 
-    private inline fun <T> withTimeUpdate(criticalLevel: CriticalLevel, action: () -> T): T {
+    private inline fun <T> withTimeUpdate(write: Boolean, action: () -> T): T {
         try {
             return action()
         } finally {
-            when (criticalLevel) {
-                CriticalLevel.READ -> updateAccessTime()
-                CriticalLevel.WRITE, CriticalLevel.WRITE_WITH_PARENT -> updateModifiedTime()
-            }
+            if (write)
+                updateModifiedTime() else
+                updateAccessTime()
         }
     }
 
-    internal inline fun <T> operation(criticalLevel: CriticalLevel, action: () -> T): T {
-        return when (criticalLevel) {
-            CriticalLevel.READ -> innerFs.criticalForBlock(fileLocation, false) { withTimeUpdate(criticalLevel, action) }
-            CriticalLevel.WRITE -> innerFs.criticalForBlock(fileLocation, true) { withTimeUpdate(criticalLevel, action) }
-            CriticalLevel.WRITE_WITH_PARENT ->
-                innerFs.criticalForBlock(parentLocation, true) {
-                    innerFs.criticalForBlock(fileLocation, true) {
-                        withTimeUpdate(criticalLevel, action)
-                    }
-                }
-        }
-    }
+    internal inline fun <T> operation(write: Boolean, action: () -> T): T =
+            innerFs.criticalForBlock(fileLocation, write) { withTimeUpdate(write, action) }
 
     private fun updateAccessTime() {
         if (!innerFs.isReadOnly) {
             val now = System.currentTimeMillis()
             directoryEntry = directoryEntry.copy(value = directoryEntry.value.copy(lastAccessTimeMillis = now))
-            innerFs.criticalForBlock(parentLocation, write = true) {
-                innerFs.rewriteEntry(directoryEntry.location, directoryEntry.entry)
-            }
+            innerFs.rewriteEntry(directoryEntry.location, directoryEntry.entry)
         }
     }
 
@@ -55,9 +40,7 @@ internal class FileDescriptor(val innerFs: InnerFileSystem,
         if (!innerFs.isReadOnly) {
             val now = System.currentTimeMillis()
             directoryEntry = directoryEntry.copy(value = directoryEntry.value.copy(lastModifiedTimeMillis = now))
-            innerFs.criticalForBlock(parentLocation, write = true) {
-                innerFs.rewriteEntry(directoryEntry.location, directoryEntry.entry)
-            }
+            innerFs.rewriteEntry(directoryEntry.location, directoryEntry.entry)
         }
     }
 
@@ -67,10 +50,8 @@ internal class FileDescriptor(val innerFs: InnerFileSystem,
         get() = directoryEntry.entry.size
         set(value) {
             directoryEntry = directoryEntry.copy(value = directoryEntry.entry.copy(size = value))
-            innerFs.criticalForBlock(parentLocation, write = true) {
-                innerFs.rewriteEntry(directoryEntry.location,
-                                     directoryEntry.entry)
-            }
+            innerFs.rewriteEntry(directoryEntry.location,
+                                 directoryEntry.entry)
         }
 
     override fun equals(other: Any?): Boolean {

@@ -330,7 +330,7 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
     internal fun setBlockAsNext(lastBlockLocation: Long, nextBlockLocation: Long) {
         checkWritable()
         val newHeader = BlockHeader(nextBlockLocation = nextBlockLocation)
-        underlyingChannel.write(newHeader.bytes(), lastBlockLocation)
+        writeOut(newHeader.bytes(), lastBlockLocation)
     }
 
     enum class CreateMode { OPEN_OR_FAIL, CREATE_OR_OPEN, CREATE_OR_FAIL }
@@ -464,10 +464,12 @@ class InnerFileSystem internal constructor(val underlyingPath: Path,
                 } else {
                     addEntryToDirectory(toParent, resultEntry)
                 }
-                synchronized(openFileDescriptors) {
-                    if (from.innerFs.fileDescriptorByBlock.containsKey(sEntry.firstBlockLocation))
-                        throw FileIsInUseException(from, "Cannot move the file")
-                    markEntryDeleted(sLocation)
+                criticalForBlock(sEntry.firstBlockLocation, write = true) {
+                    synchronized(openFileDescriptors) {
+                        if (from.innerFs.fileDescriptorByBlock.containsKey(sEntry.firstBlockLocation))
+                            throw FileIsInUseException(from, "Cannot move the file")
+                        markEntryDeleted(sLocation)
+                    }
                 }
             } else {
                 openFile(from, read = true, create = OPEN_OR_FAIL).use { sFile ->

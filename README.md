@@ -62,7 +62,7 @@ to any existing file system object, but can be re-used to store a new entry in t
 The *root* directory starts directly at zero offset in the file, and it's just a normal directory, but it stores the only 
 special construct in InnerFS -- the *unallocated blocks entry*. This entry, just like any other, points to a first block in a linked 
 list of blocks, but these blocks are *free*. If a file or a directory is deleted, all of its blocks are added to the unallocated blocks.
-If a new file/directory is created or an existing file/directory requires more spaces, blocks are first taken from the unallocated blocks 
+If a new file/directory is created or an existing file/directory requires more space, blocks are first taken from the unallocated blocks 
 list and, only if there are none, new blocks are appended to the end of the underlying file.
 
 ## Interface
@@ -197,3 +197,5 @@ As many things in Kotlin, InnerFS comes with a DSL. It consists of two parts:
 * File attributes are currently supported in a limited way (only operations with `BasicFileAttributes` and `BasicFileAttributeView` are supported, but not the named attributes). 
 
 * Directory entries are quite big (~301 byte) and are allocated with iteration through the whole directory to find a vacant place. This can be optimized. 
+
+* Currently, the instances of InnerFS are identical with no possible customization. There is room for improvement in paremeterizing the file systems. What comes to mind first is setting `BLOCK_SIZE` for a file system, but several other things can be done, too. Anyway, this would rather require increasing design complexity than that of the implementation.

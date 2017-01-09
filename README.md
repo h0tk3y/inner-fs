@@ -196,3 +196,5 @@ As many things in Kotlin, InnerFS comes with a DSL. It consists of two parts:
 * File attributes are currently supported in a limited way (only operations with `BasicFileAttributes` and `BasicFileAttributeView` are supported, but not the named attributes). 
 
 * Directory entries are quite big (~301 byte) and are allocated with iteration through the whole directory to find a vacant place. This can be optimized. 
+
+* Currently, the instances of InnerFS are identical with no possible customization. There is room for improvement in paremeterizing the file systems. What comes to mind first is setting `BLOCK_SIZE` for a file system, but several other things can be done, too. Anyway, this would rather require increasing design complexity than that of the implementation.
